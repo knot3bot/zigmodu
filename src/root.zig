@@ -17,6 +17,11 @@ pub const builder = @import("Application.zig").builder;
 // API
 pub const api = @import("api/Module.zig");
 
+// Simplified API (VTable-based)
+pub const App = @import("api/Simplified.zig").App;
+pub const Module = @import("api/Simplified.zig").Module;
+pub const ModuleImpl = @import("api/Simplified.zig").ModuleImpl;
+
 // Extensions
 pub const Container = @import("di/Container.zig").Container;
 pub const EventBus = @import("core/EventBus.zig").EventBus;
