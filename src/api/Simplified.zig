@@ -1,0 +1,167 @@
+const std = @import("std");
+
+/// Simplified Module interface using VTable pattern
+/// Provides runtime polymorphism without circular dependencies
+pub const Module = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        name: *const fn (*anyopaque) []const u8,
+        init: *const fn (*anyopaque, *anyopaque) anyerror!void,
+        start: *const fn (*anyopaque) anyerror!void,
+        stop: *const fn (*anyopaque) void,
+        dependencies: ?*const fn (*anyopaque) []const []const u8 = null,
+        on_event: ?*const fn (*anyopaque, anytype) void = null,
+    };
+
+    pub fn name(self: Module) []const u8 {
+        return self.vtable.name(self.ptr);
+    }
+
+    pub fn init(self: Module, app: *anyopaque) !void {
+        return self.vtable.init(self.ptr, app);
+    }
+
+    pub fn start(self: Module) !void {
+        return self.vtable.start(self.ptr);
+    }
+
+    pub fn stop(self: Module) void {
+        return self.vtable.stop(self.ptr);
+    }
+
+    pub fn dependencies(self: Module) []const []const u8 {
+        if (self.vtable.dependencies) |dep_fn| {
+            return dep_fn(self.ptr);
+        }
+        return &[]const []const u8{};
+    }
+};
+
+/// Auto-generate Module interface from implementation struct
+pub fn ModuleImpl(comptime T: type) type {
+    return struct {
+        pub fn interface(ptr: *T) Module {
+            const gen = struct {
+                pub fn name(ctx: *anyopaque) []const u8 {
+                    const self: *T = @ptrCast(@alignCast(ctx));
+                    return @call(.auto, T.name, .{self});
+                }
+
+                pub fn init(ctx: *anyopaque, app_ctx: *anyopaque) !void {
+                    const self: *T = @ptrCast(@alignCast(ctx));
+                    _ = app_ctx;
+                    if (@hasDecl(T, "init")) {
+                        return @call(.auto, T.init, .{self});
+                    }
+                }
+
+                pub fn start(ctx: *anyopaque) !void {
+                    const self: *T = @ptrCast(@alignCast(ctx));
+                    if (@hasDecl(T, "start")) {
+                        return @call(.auto, T.start, .{self});
+                    }
+                }
+
+                pub fn stop(ctx: *anyopaque) void {
+                    const self: *T = @ptrCast(@alignCast(ctx));
+                    if (@hasDecl(T, "stop")) {
+                        @call(.auto, T.stop, .{self});
+                    }
+                }
+
+                pub fn dependencies(ctx: *anyopaque) []const []const u8 {
+                    const self: *T = @ptrCast(@alignCast(ctx));
+                    if (@hasDecl(T, "dependencies")) {
+                        return @call(.auto, T.dependencies, .{self});
+                    }
+                    return &[]const []const u8{};
+                }
+            };
+
+            // Check which methods exist at compile time
+            const has_deps = @hasDecl(T, "dependencies");
+
+            return Module{
+                .ptr = ptr,
+                .vtable = &.{
+                    .name = gen.name,
+                    .init = gen.init,
+                    .start = gen.start,
+                    .stop = gen.stop,
+                    .dependencies = if (has_deps) gen.dependencies else null,
+                },
+            };
+        }
+    };
+}
+
+/// Simplified Application container
+pub const App = struct {
+    const Self = @This();
+
+    allocator: std.mem.Allocator,
+    modules: std.ArrayList(Module),
+    state: State,
+
+    pub const State = enum {
+        initialized,
+        started,
+        stopped,
+    };
+
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return .{
+            .allocator = allocator,
+            .modules = std.ArrayList(Module).init(allocator),
+            .state = .initialized,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        if (self.state == .started) {
+            self.stop();
+        }
+        self.modules.deinit();
+    }
+
+    pub fn register(self: *Self, module: Module) !void {
+        try self.modules.append(module);
+    }
+
+    pub fn start(self: *Self) !void {
+        if (self.state == .started) return;
+
+        // Initialize all modules
+        for (self.modules.items) |mod| {
+            try mod.init(self);
+        }
+
+        // Start all modules
+        for (self.modules.items) |mod| {
+            try mod.start();
+        }
+
+        self.state = .started;
+    }
+
+    pub fn stop(self: *Self) void {
+        if (self.state != .started) return;
+
+        // Stop in reverse order
+        var i: usize = self.modules.items.len;
+        while (i > 0) {
+            i -= 1;
+            self.modules.items[i].stop();
+        }
+
+        self.state = .stopped;
+    }
+
+    pub fn publish(self: *Self, event: anytype) void {
+        _ = self;
+        _ = event;
+        // TODO: Implement event publishing
+    }
+};
