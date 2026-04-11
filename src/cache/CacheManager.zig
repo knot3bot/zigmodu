@@ -214,7 +214,7 @@ pub const CacheManager = struct {
     }
 
     /// 获取缓存值（批量版本，减少重复更新访问顺序的开销）
-    pub fn getBatch(self: *Self, keys: []const []const u8, values: [][]const u8) usize {
+    pub fn getBatch(self: *Self, keys: []const []const u8, values: [][]const u8) !usize {
         var found_count: usize = 0;
 
         // 先收集所有值，再统一更新访问顺序
@@ -263,10 +263,33 @@ pub const CacheManager = struct {
                 }
             }
 
-            // 3. 批量添加到末尾（最近访问）
+            // 3. 批量添加到末尾（最近访问），处理可能的内存分配失败
             for (valid_keys.items) |key| {
-                const key_copy = try self.allocator.dupe(u8, key);
-                try self.access_order.append(key_copy);
+                const key_copy = self.allocator.dupe(u8, key) catch |err| {
+                    // 如果分配失败，清理已分配的key并返回错误
+                    var j: usize = self.access_order.items.len;
+                    while (j > 0) {
+                        j -= 1;
+                        // 清理我们刚才添加的新key（从原始位置+1开始）
+                        const item = self.access_order.items[j];
+                        var is_new = false;
+                        for (valid_keys.items) |vk| {
+                            if (std.mem.eql(u8, item, vk)) {
+                                is_new = true;
+                                break;
+                            }
+                        }
+                        if (is_new) {
+                            const removed = self.access_order.orderedRemove(j);
+                            self.allocator.free(removed);
+                        }
+                    }
+                    return err;
+                };
+                self.access_order.append(key_copy) catch |err| {
+                    self.allocator.free(key_copy);
+                    return err;
+                };
             }
         }
 
