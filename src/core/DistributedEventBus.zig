@@ -1,5 +1,6 @@
 const std = @import("std");
-const EventBus = @import("EventBus.zig").EventBus;
+const TypedEventBus = @import("EventBus.zig").TypedEventBus;
+const ArrayList = std.array_list.Managed;
 
 /// Distributed Event Bus for cross-node communication
 /// Allows events to be published and subscribed across multiple processes/machines
@@ -7,12 +8,12 @@ pub const DistributedEventBus = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    local_bus: EventBus(NetworkEvent),
-    nodes: std.ArrayList(Node),
+    local_bus: TypedEventBus(NetworkEvent),
+    nodes: ArrayList(Node),
     listener: ?std.net.Server,
     is_running: bool,
 
-    const NetworkEvent = struct {
+    pub const NetworkEvent = struct {
         topic: []const u8,
         payload: []const u8,
         source_node: []const u8,
@@ -29,8 +30,8 @@ pub const DistributedEventBus = struct {
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
-            .local_bus = EventBus(NetworkEvent).init(allocator),
-            .nodes = std.ArrayList(Node).init(allocator),
+            .local_bus = TypedEventBus(NetworkEvent).init(allocator),
+            .nodes = ArrayList(Node).init(allocator),
             .listener = null,
             .is_running = false,
         };
@@ -54,7 +55,7 @@ pub const DistributedEventBus = struct {
         if (self.is_running) return;
 
         const address = try std.net.Address.parseIp4("0.0.0.0", port);
-        self.listener = try std.net.Server.init(address, .{});
+        self.listener = try address.listen(.{});
         self.is_running = true;
 
         std.log.info("[DistributedEventBus] Listening on port {d}", .{port});
@@ -166,15 +167,7 @@ pub const DistributedEventBus = struct {
     /// Subscribe to events on a specific topic
     pub fn subscribe(self: *Self, topic: []const u8, callback: *const fn (NetworkEvent) void) !void {
         _ = topic;
-        // Filter callback by topic
-        const wrapped_callback = struct {
-            fn wrapper(event: NetworkEvent) void {
-                // In real implementation, filter by topic
-                callback(event);
-            }
-        }.wrapper;
-
-        try self.local_bus.subscribe(wrapped_callback);
+        try self.local_bus.subscribe(callback);
     }
 
     fn parseEvent(data: []const u8) ?NetworkEvent {

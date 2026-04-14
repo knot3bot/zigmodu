@@ -37,7 +37,7 @@ pub const WebMonitor = struct {
         self.modules = modules;
 
         const address = try std.net.Address.parseIp4("0.0.0.0", self.port);
-        self.server = try std.net.Server.init(address, .{
+        self.server = try address.listen(.{
             .reuse_address = true,
         });
 
@@ -92,10 +92,10 @@ pub const WebMonitor = struct {
         const request = buf[0..bytes_read];
 
         // Simple HTTP parsing
-        var lines = std.mem.split(u8, request, "\r\n");
+        var lines = std.mem.splitSequence(u8, request, "\r\n");
         const first_line = lines.first();
 
-        var parts = std.mem.split(u8, first_line, " ");
+        var parts = std.mem.splitSequence(u8, first_line, " ");
         _ = parts.first(); // method (GET, POST, etc.)
         const path = parts.next() orelse "/";
 
@@ -152,7 +152,8 @@ pub const WebMonitor = struct {
     }
 
     fn handleModules(self: *Self, stream: std.net.Stream) void {
-        var json = std.ArrayList(u8).init(self.allocator);
+        const ArrayList = std.array_list.Managed;
+        var json = ArrayList(u8).init(self.allocator);
         defer json.deinit();
 
         json.appendSlice("{\"modules\":[\"") catch return;
@@ -165,7 +166,7 @@ pub const WebMonitor = struct {
                 first = false;
 
                 var mod_buf: [512]u8 = undefined;
-                const module_json = std.fmt.bufPrint(&mod_buf, "{{\"name\":\"{s}\",\"description\":\"{s}\"}}", .{ entry.key_ptr.*, entry.value_ptr.info.description }) catch continue;
+                const module_json = std.fmt.bufPrint(&mod_buf, "{{\"name\":\"{s}\",\"description\":\"{s}\"}}", .{ entry.key_ptr.*, entry.value_ptr.desc }) catch continue;
 
                 json.appendSlice(module_json) catch continue;
             }

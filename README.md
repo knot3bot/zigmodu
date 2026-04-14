@@ -134,6 +134,7 @@ my-app/
 - [event-driven](examples/event-driven/) - Event bus communication
 - [dependency-injection](examples/dependency-injection/) - DI container usage
 - [distributed-events](examples/distributed-events/) - Distributed event bus (NEW!)
+- [v2-showcase](examples/v2-showcase/) - v0.2.0 feature showcase: Simplified API, Distributed Event Bus, Web Monitor, Plugin System, Hot Reloading
 - [metaverse-creative](examples/metaverse-creative/) - Complex modular application
 
 ## Documentation

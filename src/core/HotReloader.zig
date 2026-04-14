@@ -1,6 +1,7 @@
 const std = @import("std");
 const Application = @import("../Application.zig").Application;
 const ApplicationModules = @import("Module.zig").ApplicationModules;
+const ArrayList = std.array_list.Managed;
 
 /// Module Hot-Reloading System
 /// Watches module files for changes and reloads them dynamically
@@ -10,7 +11,7 @@ pub const HotReloader = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    watch_paths: std.ArrayList([]const u8),
+    watch_paths: ArrayList([]const u8),
     is_watching: bool,
     watch_thread: ?std.Thread,
     file_hashes: std.StringHashMap(u64),
@@ -19,7 +20,7 @@ pub const HotReloader = struct {
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
-            .watch_paths = std.ArrayList([]const u8).init(allocator),
+            .watch_paths = ArrayList([]const u8).init(allocator),
             .is_watching = false,
             .watch_thread = null,
             .file_hashes = std.StringHashMap(u64).init(allocator),
@@ -44,15 +45,15 @@ pub const HotReloader = struct {
 
     /// Add a path to watch
     pub fn watchPath(self: *Self, path: []const u8) !void {
-        const path_copy = try self.allocator.dupe(u8, path);
-        errdefer self.allocator.free(path_copy);
+        const resolved = try std.fs.cwd().realpathAlloc(self.allocator, path);
+        errdefer self.allocator.free(resolved);
 
-        try self.watch_paths.append(path_copy);
+        try self.watch_paths.append(resolved);
 
         // Initialize file hashes
-        try self.scanAndHashPath(path);
+        try self.scanAndHashPath(resolved);
 
-        std.log.info("[HotReloader] Now watching: {s}", .{path});
+        std.log.info("[HotReloader] Now watching: {s}", .{resolved});
     }
 
     /// Set callback for file changes
@@ -86,7 +87,7 @@ pub const HotReloader = struct {
             };
 
             // Check every 1 second
-            std.time.sleep(1 * std.time.ns_per_s);
+            std.Thread.sleep(1 * std.time.ns_per_s);
         }
     }
 

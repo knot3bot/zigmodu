@@ -112,7 +112,30 @@ try tester.ruleLimitedDependencies(5);
 
 ---
 
-### 6. Complete Application (`examples/ecommerce`)
+### 6. v0.2.0 Feature Showcase (`examples/v2-showcase`)
+**Demonstrates**: All new features introduced in ZigModu v0.2.0
+
+- Simplified API (`App`, `Module`, `ModuleImpl`)
+- Distributed Event Bus (cross-node communication)
+- Web Monitor (HTTP interface for module monitoring)
+- Plugin System (dynamic plugin loading framework)
+- Hot Reloading (file watching and module reloading)
+
+**Key Concepts**:
+```zig
+var app = zigmodu.App.init(allocator);
+var bus = zigmodu.DistributedEventBus.init(allocator);
+var monitor = zigmodu.WebMonitor.init(allocator, 3000);
+var plugins = zigmodu.PluginManager.init(allocator, "./plugins");
+var reloader = zigmodu.HotReloader.init(allocator);
+```
+
+**Run**: `cd examples/v2-showcase && zig build run`
+**Test**: `cd examples/v2-showcase && zig build test`
+
+---
+
+### 7. Complete Application (`examples/ecommerce`)
 **Demonstrates**: Real-world complex application
 
 - Multiple modules
@@ -175,8 +198,9 @@ zig build test
 
 ### Advanced
 7. Implement **Architecture Validation** in your project
-8. Build a **Complete Application** using all features
-9. Contribute new examples!
+8. Explore **v0.2.0 Feature Showcase** for distributed events, plugins, hot reloading, and web monitoring
+9. Build a **Complete Application** using all features
+10. Contribute new examples!
 
 ---
 
@@ -359,8 +383,9 @@ pub fn main() !void {
 | DI | 180 | Intermediate | ✅ Ready |
 | Testing | 120 | Intermediate | ✅ Ready |
 | Architecture | 160 | Advanced | 🚧 WIP |
+| v2-showcase | 300 | Advanced | ✅ Ready |
 | E-commerce | 500+ | Advanced | 🚧 WIP |
 
 ---
 
-*Last updated: 2025-01-09*
+*Last updated: 2025-04-14*

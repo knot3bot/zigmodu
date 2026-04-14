@@ -1,5 +1,6 @@
 const std = @import("std");
 const Event = @import("../core/Event.zig").Event;
+const ArrayList = std.array_list.Managed;
 
 /// Simplified Module interface using VTable pattern
 /// Provides runtime polymorphism without circular dependencies
@@ -36,7 +37,7 @@ pub const Module = struct {
         if (self.vtable.dependencies) |dep_fn| {
             return dep_fn(self.ptr);
         }
-        return &[]const []const u8{};
+        return &[_][]const u8{};
     }
 
     pub fn onEvent(self: Module, event: Event) void {
@@ -58,9 +59,8 @@ pub fn ModuleImpl(comptime T: type) type {
 
                 pub fn init(ctx: *anyopaque, app_ctx: *anyopaque) !void {
                     const self: *T = @ptrCast(@alignCast(ctx));
-                    _ = app_ctx;
                     if (@hasDecl(T, "init")) {
-                        return @call(.auto, T.init, .{self});
+                        return @call(.auto, T.init, .{ self, app_ctx });
                     }
                 }
 
@@ -83,7 +83,7 @@ pub fn ModuleImpl(comptime T: type) type {
                     if (@hasDecl(T, "dependencies")) {
                         return @call(.auto, T.dependencies, .{self});
                     }
-                    return &[]const []const u8{};
+                    return &[_][]const u8{};
                 }
 
                 pub fn on_event(ctx: *anyopaque, evt: Event) void {
@@ -118,7 +118,7 @@ pub const App = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    modules: std.ArrayList(Module),
+    modules: ArrayList(Module),
     state: State,
 
     pub const State = enum {
@@ -130,7 +130,7 @@ pub const App = struct {
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
-            .modules = std.ArrayList(Module).init(allocator),
+            .modules = ArrayList(Module).init(allocator),
             .state = .initialized,
         };
     }
