@@ -35,4 +35,19 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the metaverse creative economy demo");
     run_step.dependOn(&run_cmd.step);
+
+    // Test step
+    const test_step = b.step("test", "Run module tests");
+
+    const module_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/modules.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    module_tests.root_module.addImport("zigmodu", zigmodu_dep.module("zigmodu"));
+
+    const run_module_tests = b.addRunArtifact(module_tests);
+    test_step.dependOn(&run_module_tests.step);
 }

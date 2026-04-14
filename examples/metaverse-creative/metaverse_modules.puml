@@ -1,0 +1,20 @@
+@startuml
+!theme plain
+
+component [asset] {
+  Creative asset management (3D models, scenes, avatars)
+}
+
+asset --> identity
+component [identity] {
+  Decentralized identity and reputation management
+}
+
+component [world] {
+  Virtual world rendering and scene management
+}
+
+world --> identity
+world --> asset
+
+@enduml

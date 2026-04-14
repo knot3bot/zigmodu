@@ -8,7 +8,6 @@
 zig-out/
 build/
 build-*/
->/
 
 # Binary files
 *.exe
