@@ -17,8 +17,12 @@ ZigModu is a modular application framework for Zig 0.15.2 that brings the power 
 - 🏗️ **Modular Architecture** - Define modules with explicit dependencies
 - ✅ **Compile-time Validation** - Module dependencies checked at compile time
 - 🔄 **Event Bus** - Type-safe inter-module communication
+- 🌐 **Distributed Event Bus** - Cross-node event communication via TCP
 - 📝 **Auto Documentation** - Generate PlantUML diagrams from module structure
 - 💉 **Dependency Injection** - Simple DI container for service management
+- 🔌 **Plugin System** - Dynamic plugin loading framework
+- 🔄 **Hot Reloading** - File watching and module reloading
+- 🌐 **Web Monitor** - HTTP interface for module monitoring
 - ⚡ **Zero Runtime Overhead** - Compile-time module scanning
 - 🧪 **Testing Support** - Module-level testing utilities
 - 📊 **Observability** - Module-specific logging and lifecycle tracking
@@ -124,6 +128,14 @@ my-app/
     └── modules.puml
 ```
 
+## Examples
+
+- [basic](examples/basic/) - Basic module usage
+- [event-driven](examples/event-driven/) - Event bus communication
+- [dependency-injection](examples/dependency-injection/) - DI container usage
+- [distributed-events](examples/distributed-events/) - Distributed event bus (NEW!)
+- [metaverse-creative](examples/metaverse-creative/) - Complex modular application
+
 ## Documentation
 
 - [API Reference](docs/API.md)
@@ -184,6 +196,98 @@ try container.register("database", &db);
 const db_ptr = container.getTyped("database", Database);
 ```
 
+### Distributed Event Bus
+
+Communicate across multiple nodes in a cluster:
+
+```zig
+const DistributedEventBus = @import("zigmodu").DistributedEventBus;
+
+var bus = DistributedEventBus.init(allocator);
+defer bus.deinit();
+
+// Start listening for connections
+try bus.start(8080);
+
+// Subscribe to events
+try bus.subscribe("order.created", handleOrderEvent);
+
+// Publish to all connected nodes
+try bus.publish("order.created", "{\"order_id\": 123}");
+
+// Connect to remote node
+const addr = try std.net.Address.parseIp4("192.168.1.100", 8080);
+try bus.connectToNode("node-2", addr);
+```
+
+### Web Monitor
+
+HTTP interface for real-time module monitoring:
+
+```zig
+const WebMonitor = @import("zigmodu").WebMonitor;
+
+var monitor = WebMonitor.init(allocator, 3000);
+defer monitor.deinit();
+
+// Start web server
+try monitor.start(&modules);
+
+// Access endpoints:
+// GET /           - Dashboard
+// GET /api/modules    - List all modules (JSON)
+// GET /api/health     - Health check
+// GET /api/metrics    - System metrics
+```
+
+### Plugin System
+
+Dynamic plugin loading framework:
+
+```zig
+const PluginManager = @import("zigmodu").PluginManager;
+
+var plugins = PluginManager.init(allocator, "./plugins");
+defer plugins.deinit();
+
+// Load all plugins from directory
+try plugins.loadAllPlugins();
+
+// Enable/disable plugins
+try plugins.enablePlugin("my-plugin");
+try plugins.disablePlugin("my-plugin");
+
+// Check status
+if (plugins.isPluginEnabled("my-plugin")) {
+    // Plugin is active
+}
+```
+
+### Hot Reloading
+
+Watch files for changes and reload modules:
+
+```zig
+const HotReloader = @import("zigmodu").HotReloader;
+
+var reloader = HotReloader.init(allocator);
+defer reloader.deinit();
+
+// Watch module directory
+try reloader.watchPath("./src/modules");
+
+// Set change callback
+reloader.onChange(onModuleChanged);
+
+// Start watching
+try reloader.startWatching();
+
+fn onModuleChanged(path: []const u8) void {
+    std.log.info("Module changed: {s}", .{path});
+    // Trigger reload
+}
+```
+
 ## Testing
 
 Run the test suite:
@@ -229,11 +333,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Roadmap
 
+- [x] ~~Module hot-reloading~~ ✅ Implemented
+- [x] ~~Distributed event bus~~ ✅ Implemented  
+- [x] ~~Web interface for module monitoring~~ ✅ Implemented
+- [x] ~~Plugin system~~ ✅ Implemented
 - [ ] YAML/TOML configuration support
-- [ ] Module hot-reloading
-- [ ] Distributed event bus
-- [ ] Web interface for module monitoring
-- [ ] Plugin system
+- [ ] WebSocket support for real-time monitoring
+- [ ] Cluster membership service
+- [ ] Distributed transactions
 
 ---
 
