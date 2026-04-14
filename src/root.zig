@@ -22,6 +22,9 @@ pub const App = @import("api/Simplified.zig").App;
 pub const Module = @import("api/Simplified.zig").Module;
 pub const ModuleImpl = @import("api/Simplified.zig").ModuleImpl;
 
+// Extensions namespace (backward compatibility)
+pub const extensions = @import("extensions.zig");
+
 // Extensions
 pub const Container = @import("di/Container.zig").Container;
 pub const EventBus = @import("core/EventBus.zig").EventBus;

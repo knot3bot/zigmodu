@@ -1,6 +1,7 @@
 const std = @import("std");
 const zigmodu = @import("zigmodu");
 const IdentityModule = @import("identity.zig").IdentityModule;
+const ArrayList = std.array_list.Managed;
 
 /// ============================================
 /// Asset Module - 创意资产管理
@@ -68,7 +69,7 @@ pub const AssetModule = struct {
         token_id: ?[]const u8 = null,
         price: u64 = 0,
         royalty_percent: u8 = 10, // 默认 10% 版税
-        components: std.ArrayList(u64), // 组合资产的子组件
+        components: ArrayList(u64), // 组合资产的子组件
 
         /// 计算稀有度分数
         pub fn calculateRarity(self: CreativeAsset) u32 {
@@ -88,7 +89,7 @@ pub const AssetModule = struct {
     pub const AssetMetadata = struct {
         name: []const u8,
         description: []const u8,
-        tags: std.ArrayList([]const u8),
+        tags: ArrayList([]const u8),
         file_hash: []const u8,
         file_size: u64,
         dimensions: ?[3]f32, // 3D 尺寸 [x, y, z]
@@ -130,7 +131,7 @@ pub const AssetModule = struct {
             .metadata = .{
                 .name = name_copy,
                 .description = desc_copy,
-                .tags = std.ArrayList([]const u8).init(allocator),
+                .tags = ArrayList([]const u8).init(allocator),
                 .file_hash = file_hash,
                 .file_size = file_size,
                 .dimensions = null,
@@ -138,7 +139,7 @@ pub const AssetModule = struct {
             .creator_did = did_copy,
             .created_at = std.time.timestamp(),
             .minted = true,
-            .components = std.ArrayList(u64).init(allocator),
+            .components = ArrayList(u64).init(allocator),
         };
 
         try assets.put(file_hash, asset);

@@ -4,8 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Create the zigmodu module
-    const zigmodu_mod = b.createModule(.{
+    // Create and export the zigmodu module for dependent packages
+    const zigmodu_mod = b.addModule("zigmodu", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,

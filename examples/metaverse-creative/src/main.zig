@@ -2,9 +2,10 @@ const std = @import("std");
 const zigmodu = @import("zigmodu");
 
 // 导入元宇宙创意经济模块
-const IdentityModule = @import("../modules/identity.zig").IdentityModule;
-const AssetModule = @import("../modules/asset.zig").AssetModule;
-const WorldModule = @import("../modules/world.zig").WorldModule;
+const modules = @import("modules");
+const IdentityModule = modules.identity.IdentityModule;
+const AssetModule = modules.asset.AssetModule;
+const WorldModule = modules.world.WorldModule;
 
 /// ============================================
 /// MetaVerse Creative Economy Demo
@@ -22,7 +23,7 @@ const WorldModule = @import("../modules/world.zig").WorldModule;
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    _ = gpa.allocator();
 
     // 初始化日志
     std.log.info("\n╔══════════════════════════════════════════════════════════════╗", .{});
@@ -68,7 +69,7 @@ pub fn main() !void {
     const neon_texture = try AssetModule.mintAsset("did:mv:bob", .texture, "Neon Glow Texture", "Pulsing neon light texture for cyberpunk atmosphere", "hash_texture_001", 2_000_000);
     try AssetModule.setAssetPrice("hash_texture_001", 400);
 
-    const metal_texture = try AssetModule.mintAsset("did:mv:bob", .texture, "Scratched Metal", "Industrial metal surface with wear and tear", "hash_texture_002", 1_500_000);
+    _ = try AssetModule.mintAsset("did:mv:bob", .texture, "Scratched Metal", "Industrial metal surface with wear and tear", "hash_texture_002", 1_500_000);
     try AssetModule.setAssetPrice("hash_texture_002", 300);
 
     std.log.info("✓ 4 个创意资产已铸造完成", .{});
@@ -82,7 +83,7 @@ pub fn main() !void {
 
     // Carol 组合多个资产创建复杂场景
     const scene_components = [_]u64{ building_id, vehicle_id, neon_texture };
-    const composed_scene = try AssetModule.composeAssets("did:mv:carol", "Night City Street", "Complete cyberpunk street scene with buildings, vehicles and lighting", &scene_components);
+    _ = try AssetModule.composeAssets("did:mv:carol", "Night City Street", "Complete cyberpunk street scene with buildings, vehicles and lighting", &scene_components);
 
     std.log.info("✓ Carol 组合了 3 个资产创建新场景 'Night City Street'", .{});
     std.log.info("  - 组合资产价格: {d} tokens (含 20% 创作溢价)\n", .{2500 + 1200 + 400 + (2500 + 1200 + 400) / 5});

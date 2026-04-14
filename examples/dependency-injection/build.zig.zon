@@ -1,7 +1,7 @@
 .{
     .name = .di_example,
     .version = "0.1.0",
-    .fingerprint = 0x6e7e59d259a862fc,
+    .fingerprint = 0xb4c05e08c300b958,
     .minimum_zig_version = "0.15.2",
     .dependencies = .{
         .zigmodu = .{

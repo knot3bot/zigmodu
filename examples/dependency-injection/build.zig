@@ -10,10 +10,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const zigmodu_dep = b.dependency("zigmodu", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    const zigmodu_dep = b.dependency("zigmodu", .{});
     exe_mod.addImport("zigmodu", zigmodu_dep.module("zigmodu"));
 
     const exe = b.addExecutable(.{

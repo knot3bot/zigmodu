@@ -48,11 +48,11 @@ pub fn main() !void {
 
     std.log.info("=== Event Bus Example ===", .{});
 
-    // Create event buses
-    var order_bus = zigmodu.EventBus(OrderCreatedEvent).init(allocator);
+    // Create typed event buses
+    var order_bus = zigmodu.TypedEventBus(OrderCreatedEvent).init(allocator);
     defer order_bus.deinit();
 
-    var payment_bus = zigmodu.EventBus(PaymentProcessedEvent).init(allocator);
+    var payment_bus = zigmodu.TypedEventBus(PaymentProcessedEvent).init(allocator);
     defer payment_bus.deinit();
 
     // Subscribe to events

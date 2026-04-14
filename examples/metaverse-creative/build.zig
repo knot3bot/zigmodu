@@ -4,16 +4,29 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = "metaverse-creative",
-        .root_source_file = b.path("src/main.zig"),
+    // Create a module for the modules directory
+    const modules_mod = b.createModule(.{
+        .root_source_file = b.path("modules/modules.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    // Add ZigModu dependency
+    // Add ZigModu dependency to modules
     const zigmodu_dep = b.dependency("zigmodu", .{});
-    exe.root_module.addImport("zigmodu", zigmodu_dep.module("zigmodu"));
+    modules_mod.addImport("zigmodu", zigmodu_dep.module("zigmodu"));
+
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_mod.addImport("zigmodu", zigmodu_dep.module("zigmodu"));
+    exe_mod.addImport("modules", modules_mod);
+
+    const exe = b.addExecutable(.{
+        .name = "metaverse-creative",
+        .root_module = exe_mod,
+    });
 
     b.installArtifact(exe);
 

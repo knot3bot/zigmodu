@@ -1,7 +1,7 @@
 .{
-    .name = .basic_example,
+    .name = .metaverse_creative,
     .version = "0.1.0",
-    .fingerprint = 0x82760a52abba4cf7,
+    .fingerprint = 0xe59c3d8c04d4c4f,
     .minimum_zig_version = "0.15.2",
     .dependencies = .{
         .zigmodu = .{
@@ -12,5 +12,6 @@
         "build.zig",
         "build.zig.zon",
         "src",
+        "modules",
     },
 }

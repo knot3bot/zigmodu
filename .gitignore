@@ -8,6 +8,7 @@
 zig-out/
 build/
 build-*/
+>/
 
 # Binary files
 *.exe
@@ -16,6 +17,7 @@ build-*/
 *.dylib
 *.a
 *.lib
+
 
 # Debug files
 *.pdb
