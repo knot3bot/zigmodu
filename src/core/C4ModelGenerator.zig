@@ -133,10 +133,10 @@ pub const C4ModelGenerator = struct {
             const file = try std.fs.cwd().createFile(context_path, .{});
             defer file.close();
 
-            var buf = std.ArrayList(u8).init(self.allocator);
-            defer buf.deinit();
+            var buf = std.ArrayList(u8){};
+            defer buf.deinit(self.allocator);
 
-            try self.generateContextDiagram(buf.writer(), system_name);
+            try self.generateContextDiagram(buf.writer(self.allocator), system_name);
             try file.writeAll(buf.items);
         }
 
@@ -148,10 +148,10 @@ pub const C4ModelGenerator = struct {
             const file = try std.fs.cwd().createFile(container_path, .{});
             defer file.close();
 
-            var buf = std.ArrayList(u8).init(self.allocator);
-            defer buf.deinit();
+            var buf = std.ArrayList(u8){};
+            defer buf.deinit(self.allocator);
 
-            try self.generateContainerDiagram(buf.writer(), system_name);
+            try self.generateContainerDiagram(buf.writer(self.allocator), system_name);
             try file.writeAll(buf.items);
         }
 
@@ -166,10 +166,10 @@ pub const C4ModelGenerator = struct {
             const file = try std.fs.cwd().createFile(component_path, .{});
             defer file.close();
 
-            var buf = std.ArrayList(u8).init(self.allocator);
-            defer buf.deinit();
+            var buf = std.ArrayList(u8){};
+            defer buf.deinit(self.allocator);
 
-            try self.generateComponentDiagram(buf.writer(), module_name);
+            try self.generateComponentDiagram(buf.writer(self.allocator), module_name);
             try file.writeAll(buf.items);
         }
     }

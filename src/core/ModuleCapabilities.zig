@@ -104,7 +104,7 @@ pub const CapabilityRegistry = struct {
     }
 
     pub fn generateApiBoundaryReport(self: *Self, allocator: std.mem.Allocator) ![]const u8 {
-        var buf = std.ArrayList(u8).init(allocator);
+        var buf = std.ArrayList(u8){};
         const writer = buf.writer(allocator);
 
         try writer.writeAll("# Module API Boundaries\n\n");

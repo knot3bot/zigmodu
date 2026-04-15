@@ -41,7 +41,7 @@ pub const RateLimiter = struct {
     /// 获取一个令牌，如果不可用则等待
     pub fn acquire(self: *Self) void {
         while (!self.tryAcquire()) {
-            std.time.sleep(10 * std.time.ns_per_ms); // 等待10ms
+            std.Thread.sleep(10 * std.time.ns_per_ms); // 等待10ms
         }
     }
 

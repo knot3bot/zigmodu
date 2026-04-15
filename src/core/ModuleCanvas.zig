@@ -67,32 +67,32 @@ pub const ModuleCanvas = struct {
             .allocator = allocator,
             .module_name = module_name,
             .module_info = info,
-            .public_apis = std.ArrayList(ApiInfo).init(allocator),
-            .internal_apis = std.ArrayList(ApiInfo).init(allocator),
-            .dependencies = std.ArrayList(DependencyInfo).init(allocator),
-            .depended_by = std.ArrayList([]const u8).init(allocator),
-            .published_events = std.ArrayList(EventInfo).init(allocator),
-            .listened_events = std.ArrayList(EventInfo).init(allocator),
-            .input_ports = std.ArrayList(PortInfo).init(allocator),
-            .output_ports = std.ArrayList(PortInfo).init(allocator),
+            .public_apis = std.ArrayList(ApiInfo){},
+            .internal_apis = std.ArrayList(ApiInfo){},
+            .dependencies = std.ArrayList(DependencyInfo){},
+            .depended_by = std.ArrayList([]const u8){},
+            .published_events = std.ArrayList(EventInfo){},
+            .listened_events = std.ArrayList(EventInfo){},
+            .input_ports = std.ArrayList(PortInfo){},
+            .output_ports = std.ArrayList(PortInfo){},
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.public_apis.deinit();
-        self.internal_apis.deinit();
-        self.dependencies.deinit();
-        self.depended_by.deinit();
-        self.published_events.deinit();
-        self.listened_events.deinit();
-        self.input_ports.deinit();
-        self.output_ports.deinit();
+        self.public_apis.deinit(self.allocator);
+        self.internal_apis.deinit(self.allocator);
+        self.dependencies.deinit(self.allocator);
+        self.depended_by.deinit(self.allocator);
+        self.published_events.deinit(self.allocator);
+        self.listened_events.deinit(self.allocator);
+        self.input_ports.deinit(self.allocator);
+        self.output_ports.deinit(self.allocator);
     }
 
     /// 添加公共API
     pub fn addPublicApi(self: *Self, name: []const u8, description: []const u8) !void {
         if (name.len == 0) return error.InvalidApiName;
-        try self.public_apis.append(.{
+        try self.public_apis.append(self.allocator, .{
             .name = name,
             .description = description,
             .is_public = true,
@@ -102,7 +102,7 @@ pub const ModuleCanvas = struct {
     /// 添加内部API
     pub fn addInternalApi(self: *Self, name: []const u8, description: []const u8) !void {
         if (name.len == 0) return error.InvalidApiName;
-        try self.internal_apis.append(.{
+        try self.internal_apis.append(self.allocator, .{
             .name = name,
             .description = description,
             .is_public = false,
@@ -112,7 +112,7 @@ pub const ModuleCanvas = struct {
     /// 添加依赖
     pub fn addDependency(self: *Self, module_name: []const u8, dep_type: DependencyType, description: []const u8) !void {
         if (module_name.len == 0) return error.InvalidModuleName;
-        try self.dependencies.append(.{
+        try self.dependencies.append(self.allocator, .{
             .module_name = module_name,
             .dependency_type = dep_type,
             .description = description,
@@ -122,7 +122,7 @@ pub const ModuleCanvas = struct {
     /// 添加发布的事件
     pub fn addPublishedEvent(self: *Self, event_type: []const u8, description: []const u8) !void {
         if (event_type.len == 0) return error.InvalidEventType;
-        try self.published_events.append(.{
+        try self.published_events.append(self.allocator, .{
             .event_type = event_type,
             .description = description,
             .is_published = true,
@@ -132,7 +132,7 @@ pub const ModuleCanvas = struct {
     /// 添加监听的事件
     pub fn addListenedEvent(self: *Self, event_type: []const u8, description: []const u8) !void {
         if (event_type.len == 0) return error.InvalidEventType;
-        try self.listened_events.append(.{
+        try self.listened_events.append(self.allocator, .{
             .event_type = event_type,
             .description = description,
             .is_published = false,
@@ -301,10 +301,10 @@ pub const CanvasGenerator = struct {
             defer file.close();
 
             // 生成文档
-            var buf = std.ArrayList(u8).init(self.allocator);
-            defer buf.deinit();
+            var buf = std.ArrayList(u8){};
+            defer buf.deinit(self.allocator);
 
-            const writer = buf.writer();
+            const writer = buf.writer(self.allocator);
             try canvas.generateDocumentation(writer);
 
             try file.writeAll(buf.items);
