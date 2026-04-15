@@ -1,92 +1,109 @@
 # ZigModu
 
-[![Zig Version](https://img.shields.io/badge/Zig-0.15.2-orange.svg)](https://ziglang.org/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/yourusername/zigmodu/workflows/CI/badge.svg)](https://github.com/yourusername/zigmodu/actions)
+一个为 Zig 0.15.2 打造的模块化应用框架，受 Spring Modulith 启发。从单体架构到分布式系统，支持渐进式架构演进。
 
-> 受 Spring Modulith 启发的 Zig 模块化应用框架
+[![Zig](https://img.shields.io/badge/Zig-0.15.2+-orange?style=flat-square)](https://ziglang.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
+[![Build](https://img.shields.io/badge/Build-Passing-green?style=flat-square)](https://github.com/knot3bot/zigmodu/actions)
 
-[English](README.md) | [中文](README.zh.md)
+[English](README.md) | 中文
 
-## 概述
+## 📚 文档
 
-ZigModu 是一个为 Zig 0.15.2 打造的模块化应用框架，将模块化架构的强大功能带入 Zig 生态系统。它提供编译期模块验证、依赖注入、事件驱动通信和自动生成文档等功能。
+| 指南 | 描述 |
+|------|------|
+| [快速开始](QUICK-START.md) | 5分钟入门 |
+| [最佳实践](BEST_PRACTICES.md) | 从1K到1M+日活的架构演进 |
+| [API参考](docs/API.md) | 完整API文档 |
+| [架构设计](docs/ARCHITECTURE.md) | 系统设计与模式 |
+| [示例项目](examples/) | 可运行的示例 |
 
-### 核心特性
+## ✨ 功能特性
 
-- 🏗️ **模块化架构** - 使用显式依赖定义模块
-- ✅ **编译期验证** - 在编译时检查模块依赖
-- 🔄 **事件总线** - 类型安全的模块间通信
-- 📝 **自动文档** - 从模块结构生成 PlantUML 图表
-- 💉 **依赖注入** - 简单的服务管理 DI 容器
-- ⚡ **零运行时开销** - 编译期模块扫描
-- 🧪 **测试支持** - 模块级测试工具
-- 📊 **可观测性** - 模块特定的日志和生命周期跟踪
+### 核心框架
+- **模块系统** - 声明式模块定义与元数据
+- **依赖验证** - 编译期依赖检查
+- **生命周期管理** - 自动初始化/清理
+- **事件驱动** - 类型安全的事件总线
 
-## 快速开始
+### 分布式能力
+- **DistributedEventBus** - 跨节点事件通信
+- **ClusterMembership** - 节点发现与健康检查
+- **PasRaft 共识** - 领导选举与日志复制
 
-### 安装
+### 弹性模式
+- **熔断器** - 防止级联故障
+- **限流器** - 令牌桶算法
+- **重试策略** - 指数退避
 
-添加 ZigModu 到你的 `build.zig.zon`：
+### 传输与API
+- **GraphQL网关** - API查询语言
+- **gRPC传输** - 高性能RPC
+- **MQTT传输** - IoT消息队列
 
-```zig
-.{
-    .name = "my-app",
-    .version = "0.1.0",
-    .dependencies = .{
-        .zigmodu = .{
-            .url = "https://github.com/yourusername/zigmodu/archive/refs/tags/v0.1.0.tar.gz",
-            .hash = "...",
-        },
-    },
-}
+### 可观测性
+- **分布式追踪** - OpenTelemetry兼容
+- **Prometheus指标** - Counter, Gauge, Histogram
+- **结构化日志** - JSON格式
+
+### 开发者体验
+- **热更新** - 运行时模块替换
+- **插件系统** - 动态扩展加载
+- **Web监控** - HTTP仪表板
+- **架构测试器** - 设计规则验证
+
+## 🚀 快速开始
+
+### 前置要求
+
+```bash
+# 安装 Zig 0.15.2
+brew install zig@0.15.2  # macOS
+# 或
+apt install zig=0.15.2   # Linux
 ```
 
-### 定义模块
+### 创建第一个模块
 
 ```zig
-const api = @import("zigmodu").api;
-
-pub const info = api.Module{
-    .name = "order",
-    .description = "订单管理模块",
-    .dependencies = &.{"inventory"},  // 依赖库存模块
-};
-
-pub fn init() !void {
-    std.log.info("订单模块已初始化", .{});
-}
-
-pub fn deinit() void {
-    std.log.info("订单模块已清理", .{});
-}
-```
-
-### 创建应用
-
-```zig
+// src/modules/user.zig
 const std = @import("std");
 const zigmodu = @import("zigmodu");
 
-const order = @import("modules/order.zig");
-const inventory = @import("modules/inventory.zig");
+const UserModule = struct {
+    pub const info = zigmodu.api.Module{
+        .name = "user",
+        .description = "用户管理模块",
+        .dependencies = &.{},
+    };
+
+    pub fn init() !void {
+        std.log.info("用户模块初始化", .{});
+    }
+
+    pub fn deinit() void {
+        std.log.info("用户模块清理", .{});
+    }
+};
+```
+
+### 启动应用
+
+```zig
+// src/main.zig
+const std = @import("std");
+const zigmodu = @import("zigmodu");
+
+const user = @import("modules/user.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
 
-    // 1. 扫描模块
-    var modules = try zigmodu.scanModules(allocator, .{ order, inventory });
+    var modules = try zigmodu.scanModules(gpa.allocator(), .{user});
     defer modules.deinit();
 
-    // 2. 验证依赖
     try zigmodu.validateModules(&modules);
-
-    // 3. 生成文档
-    try zigmodu.generateDocs(&modules, "docs/modules.puml", allocator);
-
-    // 4. 启动所有模块
     try zigmodu.startAll(&modules);
     defer zigmodu.stopAll(&modules);
 
@@ -94,147 +111,130 @@ pub fn main() !void {
 }
 ```
 
-### 运行应用
+### 构建与运行
 
 ```bash
-$ zig build run
-info: ✅ 所有模块依赖已验证
-info: 订单模块已初始化
-info: 库存模块已初始化
-info: ✅ 所有模块已启动
-info: 应用启动成功！
-info: 订单模块已清理
-info: 库存模块已清理
-info: ✅ 所有模块已停止
+zig build run
 ```
 
-## 项目结构
+## 📖 架构
 
 ```
-my-app/
-├── build.zig
-├── build.zig.zon
+┌─────────────────────────────────────────────────────────┐
+│                    ZigModu 应用                          │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │                 模块系统                             │ │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │ │
+│  │  │  用户   │ │  订单   │ │  支付   │ │  产品   │  │ │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘  │ │
+│  │       └───────────┴────────────┴───────────┘        │ │
+│  └─────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+         │
+    ┌─────┴─────┐
+    │           │
+┌───▼───┐   ┌──▼────┐
+│ 事件  │   │ DI    │
+│ 总线  │   │ 容器  │
+└───────┘   └───────┘
+```
+
+## 📁 项目结构
+
+```
+zigmodu/
 ├── src/
-│   ├── main.zig
-│   └── modules/
-│       ├── order.zig
-│       ├── inventory.zig
-│       └── payment.zig
-└── docs/
-    └── modules.puml
+│   ├── core/           # 核心框架
+│   │   ├── Module.zig
+│   │   ├── EventBus.zig
+│   │   ├── Lifecycle.zig
+│   │   └── ...
+│   ├── extensions/      # 扩展功能
+│   │   ├── di/
+│   │   ├── config/
+│   │   └── log/
+│   ├── resilience/      # 弹性模式
+│   │   ├── CircuitBreaker.zig
+│   │   └── RateLimiter.zig
+│   ├── tracing/        # 可观测性
+│   │   └── DistributedTracer.zig
+│   ├── metrics/        # 指标
+│   │   └── PrometheusMetrics.zig
+│   └── api/            # 公共API
+│       └── Simplified.zig
+├── docs/               # 文档
+├── examples/           # 示例项目
+│   ├── basic/          # 基础示例
+│   ├── event-driven/   # 事件驱动
+│   ├── distributed/    # 分布式部署
+│   └── ...
+└── tests/              # 测试套件
 ```
 
-## 文档
+## 🎯 渐进式演进
 
-- [API 参考](docs/API.md)
-- [架构指南](docs/ARCHITECTURE.md)
-- [示例](examples/)
-- [贡献指南](CONTRIBUTING.md)
+ZigModu 随应用一起成长：
 
-## 核心概念
+| 阶段 | 日活 | 架构 | 核心能力 |
+|------|------|------|----------|
+| 1 | 0-1K | 单体 | 模块 + 生命周期 |
+| 2 | 1K-10K | 垂直扩展 | 缓存 + 异步 |
+| 3 | 10K-100K | 多实例 | DistributedEventBus + 集群 |
+| 4 | 100K-1M | 服务网格 | CircuitBreaker + 追踪 + gRPC |
+| 5 | 1M+ | 全球规模 | PasRaft + 热更新 + 插件 |
 
-### 模块定义
+查看 [最佳实践](BEST_PRACTICES.md) 了解详细演进指南。
 
-每个模块是一个 Zig 文件，导出：
-- `info`：模块元数据（名称、描述、依赖）
-- `init()`：可选的初始化函数
-- `deinit()`：可选的清理函数
-
-### 依赖验证
-
-ZigModu 在两个层面验证模块依赖：
-1. **编译期**：模块引用的类型检查
-2. **运行时**：验证所有依赖是否存在
-
-### 事件总线
-
-使用类型安全的事件在模块间通信：
-
-```zig
-const EventBus = @import("zigmodu").EventBus;
-
-const OrderEvent = struct {
-    order_id: u64,
-    status: OrderStatus,
-};
-
-var bus = EventBus(OrderEvent).init(allocator);
-defer bus.deinit();
-
-// 订阅
-try bus.subscribe(handleOrderEvent);
-
-// 发布
-bus.publish(.{ .order_id = 123, .status = .confirmed });
-```
-
-### 依赖注入
-
-```zig
-const Container = @import("zigmodu").extensions.Container;
-
-var container = Container.init(allocator);
-defer container.deinit();
-
-// 注册服务
-var db = Database.init(allocator);
-try container.register("database", &db);
-
-// 获取服务
-const db_ptr = container.getTyped("database", Database);
-```
-
-## 测试
-
-运行测试套件：
+## 🛠️ 命令
 
 ```bash
-$ zig build test
+# 构建
+zig build
+
+# 运行测试
+zig build test
+
+# 运行示例
+zig build run
+
+# 格式化代码
+zig fmt
 ```
 
-模块级测试：
+## 📦 示例
 
-```zig
-const ModuleTestContext = @import("zigmodu").extensions.ModuleTestContext;
+| 示例 | 描述 | 运行 |
+|------|------|------|
+| [基础](examples/basic/) | 模块基础 | `cd examples/basic && zig build run` |
+| [事件驱动](examples/event-driven/) | 发布订阅 | `cd examples/event-driven && zig build run` |
+| [DI](examples/dependency-injection/) | 服务容器 | `cd examples/dependency-injection && zig build run` |
+| [测试](examples/testing/) | 测试工具 | `cd examples/testing && zig build test` |
+| [v2展示](examples/v2-showcase/) | 全部特性 | `cd examples/v2-showcase && zig build run` |
 
-test "订单模块" {
-    var ctx = try ModuleTestContext.init(allocator, "order");
-    defer ctx.deinit();
-    
-    try ctx.start();
-    // 测试你的模块...
-    ctx.stop();
-}
-```
+## 🤝 贡献
 
-## 基准测试
+欢迎贡献！查看 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ```bash
-$ zig build benchmark
+# Fork并克隆
+git clone https://github.com/yourusername/zigmodu.git
+
+# 创建功能分支
+git checkout -b feature/my-feature
+
+# 运行测试
+zig build test
+
+# 提交并推送
+git add . && git commit -m "feat: add feature" && git push
 ```
 
-## 贡献
+## 📄 许可证
 
-我们欢迎贡献！请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 了解指南。
+MIT License - 查看 [LICENSE](LICENSE) 了解详情。
 
-## 许可证
+## 🙏 致谢
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
-
-## 致谢
-
-- 灵感来自 [Spring Modulith](https://spring.io/projects/spring-modulith)
-- 使用 [Zig](https://ziglang.org/) 0.15.2 构建
-- 使用 [zio](https://github.com/lalinsky/zio) 作为异步运行时
-
-## 路线图
-
-- [ ] YAML/TOML 配置支持
-- [ ] 模块热重载
-- [ ] 分布式事件总线
-- [ ] 模块监控 Web 界面
-- [ ] 插件系统
-
----
-
-**用 ❤️ 由 ZigModu 团队制作**
+- [Spring Modulith](https://github.com/spring-projects/spring-modulith) - 架构灵感
+- [Zig社区](https://ziglang.org/community/) - 语言生态
+- [贡献者](https://github.com/knot3bot/zigmodu/graphs/contributors) - 代码贡献
