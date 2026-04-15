@@ -81,4 +81,22 @@ pub fn build(b: *std.Build) void {
     const docs_run = b.addRunArtifact(docs_exe);
     const docs_step = b.step("docs", "Generate documentation");
     docs_step.dependOn(&docs_run.step);
+
+    // ZigCtl step
+    const zigctl_mod = b.createModule(.{
+        .root_source_file = b.path("tools/zigctl/src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const zigctl_exe = b.addExecutable(.{
+        .name = "zigctl",
+        .root_module = zigctl_mod,
+    });
+    const zigctl_run = b.addRunArtifact(zigctl_exe);
+    if (b.args) |args| {
+        zigctl_run.addArgs(args);
+    }
+    const zigctl_step = b.step("zigctl", "Run zigctl code generator");
+    zigctl_step.dependOn(&zigctl_run.step);
 }
