@@ -114,13 +114,13 @@ pub const ModuleListenerRegistry = struct {
         // Validate input
         if (module_name.len == 0) return error.InvalidModuleName;
 
-        var result = std.ArrayList(ListenerInfo).init(self.allocator);
-        errdefer result.deinit();
+        var result = std.ArrayList(ListenerInfo){};
+        errdefer result.deinit(self.allocator);
 
         var iter = self.listeners.iterator();
         while (iter.next()) |entry| {
             if (std.mem.eql(u8, entry.value_ptr.module_name, module_name)) {
-                try result.append(entry.value_ptr.*);
+                try result.append(self.allocator, entry.value_ptr.*);
             }
         }
 
@@ -145,17 +145,17 @@ pub const EventExternalization = struct {
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
-            .externalizers = std.ArrayList(Externalizer).init(allocator),
+            .externalizers = std.ArrayList(Externalizer){},
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.externalizers.deinit();
+        self.externalizers.deinit(self.allocator);
     }
 
     /// 注册外部化器
     pub fn registerExternalizer(self: *Self, externalizer: Externalizer) !void {
-        try self.externalizers.append(externalizer);
+        try self.externalizers.append(self.allocator, externalizer);
     }
 
     /// 外部化事件

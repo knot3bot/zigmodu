@@ -219,8 +219,9 @@ pub const SecurityScanner = struct {
     pub fn scanModule(self: *Self, module_path: []const u8) !ScanResult {
         var result = ScanResult{
             .total_files = 0,
-            .findings = std.ArrayList(SecurityFinding).init(self.allocator),
+            .findings = std.ArrayList(SecurityFinding){},
         };
+        errdefer result.findings.deinit(self.allocator);
 
         // 扫描目录下的所有.zig文件
         var dir = std.fs.cwd().openDir(module_path, .{ .iterate = true }) catch |err| {
@@ -249,7 +250,7 @@ pub const SecurityScanner = struct {
 
         // 统计发现的问题
         for (self.findings.items) |finding| {
-            try result.findings.append(finding);
+            try result.findings.append(self.allocator, finding);
             switch (finding.severity) {
                 .CRITICAL => result.critical_count += 1,
                 .HIGH => result.high_count += 1,
@@ -264,8 +265,8 @@ pub const SecurityScanner = struct {
 
     /// 生成扫描报告
     pub fn generateReport(self: *Self, result: *const ScanResult) ![]const u8 {
-        var buf = std.ArrayList(u8).init(self.allocator);
-        const writer = buf.writer();
+        var buf = std.ArrayList(u8){};
+        const writer = buf.writer(self.allocator);
 
         try writer.writeAll("# Security Scan Report\n\n");
         try writer.print("Total Files Scanned: {d}\n", .{result.total_files});
@@ -287,7 +288,7 @@ pub const SecurityScanner = struct {
             }
         }
 
-        return buf.toOwnedSlice();
+        return buf.toOwnedSlice(self.allocator);
     }
 
     /// 检查是否通过安全扫描
@@ -564,4 +565,99 @@ test "SecurityConfigValidator" {
     defer result.deinit();
 
     try testing.expect(result.passed);
+}
+
+test "SecurityScanner scanModule" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const f1 = try tmp_dir.dir.createFile("main.zig", .{});
+    try f1.writeAll("const password = \"secret123\";\n");
+    f1.close();
+
+    const f2 = try tmp_dir.dir.createFile("http.zig", .{});
+    try f2.writeAll("const url = \"http://example.com\";\n");
+    f2.close();
+
+    const f3 = try tmp_dir.dir.createFile("crypto.zig", .{});
+    try f3.writeAll("const hash = MD5.init();\n");
+    f3.close();
+
+    const base_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(base_path);
+
+    var scanner = SecurityScanner.init(allocator, .{
+        .min_severity = .LOW,
+    });
+    defer scanner.deinit();
+
+    var result = try scanner.scanModule(base_path);
+    defer result.findings.deinit(allocator);
+
+    try testing.expectEqual(@as(usize, 3), result.total_files);
+    try testing.expect(result.findings.items.len >= 3);
+    try testing.expect(result.getTotalIssues() >= 3);
+    try testing.expect(result.hasCriticalOrHigh());
+}
+
+test "SecurityScanner generate report" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var scanner = SecurityScanner.init(allocator, .{});
+    defer scanner.deinit();
+
+    const test_code = "const password = \"secret\";\n";
+    try scanner.scanSourceCode("test.zig", test_code);
+
+    var dummy_result = SecurityScanner.ScanResult{
+        .total_files = 1,
+        .findings = std.ArrayList(SecurityScanner.SecurityFinding){},
+    };
+    defer dummy_result.findings.deinit(allocator);
+
+    for (scanner.findings.items) |finding| {
+        try dummy_result.findings.append(allocator, finding);
+        switch (finding.severity) {
+            .CRITICAL => dummy_result.critical_count += 1,
+            .HIGH => dummy_result.high_count += 1,
+            .MEDIUM => dummy_result.medium_count += 1,
+            .LOW => dummy_result.low_count += 1,
+            .INFO => dummy_result.info_count += 1,
+        }
+    }
+
+    const report = try scanner.generateReport(&dummy_result);
+    defer allocator.free(report);
+
+    try testing.expect(std.mem.indexOf(u8, report, "Security Scan Report") != null);
+    try testing.expect(std.mem.indexOf(u8, report, "Total Issues Found") != null);
+}
+
+test "SecurityScanner isSecure" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var scanner = SecurityScanner.init(allocator, .{});
+    defer scanner.deinit();
+
+    var secure_result = SecurityScanner.ScanResult{
+        .total_files = 1,
+        .findings = std.ArrayList(SecurityScanner.SecurityFinding){},
+        .low_count = 1,
+    };
+    defer secure_result.findings.deinit(allocator);
+
+    var insecure_result = SecurityScanner.ScanResult{
+        .total_files = 1,
+        .findings = std.ArrayList(SecurityScanner.SecurityFinding){},
+        .high_count = 1,
+    };
+    defer insecure_result.findings.deinit(allocator);
+
+    try testing.expect(scanner.isSecure(&secure_result));
+    try testing.expect(!scanner.isSecure(&insecure_result));
 }

@@ -237,7 +237,7 @@ pub const HttpClient = struct {
                 if (attempt < self.retry_policy.max_retries) {
                     const delay = self.retry_policy.calculateDelay(attempt);
                     std.log.warn("Request failed, retrying in {d}ms (attempt {d}/{d})", .{ delay, attempt + 1, self.retry_policy.max_retries });
-                    std.time.sleep(delay * std.time.ns_per_ms);
+                    std.Thread.sleep(delay * std.time.ns_per_ms);
                 }
                 continue;
             };

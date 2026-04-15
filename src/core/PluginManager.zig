@@ -220,3 +220,174 @@ pub const PluginManifest = struct {
         event_handler,
     };
 };
+
+test "PluginManager load and unload plugin" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const file = try tmp_dir.dir.createFile("test_plugin.so", .{});
+    file.close();
+
+    const path = try tmp_dir.dir.realpathAlloc(allocator, "test_plugin.so");
+    defer allocator.free(path);
+
+    var manager = PluginManager.init(allocator, "/tmp/plugins");
+    defer manager.deinit();
+
+    try manager.loadPlugin("test_plugin", path);
+    try std.testing.expect(manager.isPluginLoaded("test_plugin"));
+    try std.testing.expect(manager.isPluginEnabled("test_plugin"));
+    try std.testing.expectEqual(@as(usize, 1), manager.getPluginCount());
+
+    manager.unloadPlugin("test_plugin");
+    try std.testing.expect(!manager.isPluginLoaded("test_plugin"));
+    try std.testing.expectEqual(@as(usize, 0), manager.getPluginCount());
+}
+
+test "PluginManager enable and disable plugin" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const file = try tmp_dir.dir.createFile("test_plugin.so", .{});
+    file.close();
+
+    const path = try tmp_dir.dir.realpathAlloc(allocator, "test_plugin.so");
+    defer allocator.free(path);
+
+    var manager = PluginManager.init(allocator, "/tmp/plugins");
+    defer manager.deinit();
+
+    try manager.loadPlugin("test_plugin", path);
+    try manager.disablePlugin("test_plugin");
+    try std.testing.expect(!manager.isPluginEnabled("test_plugin"));
+
+    try manager.enablePlugin("test_plugin");
+    try std.testing.expect(manager.isPluginEnabled("test_plugin"));
+}
+
+test "PluginManager load duplicate plugin fails" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const file = try tmp_dir.dir.createFile("test_plugin.so", .{});
+    file.close();
+
+    const path = try tmp_dir.dir.realpathAlloc(allocator, "test_plugin.so");
+    defer allocator.free(path);
+
+    var manager = PluginManager.init(allocator, "/tmp/plugins");
+    defer manager.deinit();
+
+    try manager.loadPlugin("test_plugin", path);
+    const result = manager.loadPlugin("test_plugin", path);
+    try std.testing.expectError(error.PluginAlreadyLoaded, result);
+}
+
+test "PluginManager load nonexistent plugin fails" {
+    const allocator = std.testing.allocator;
+    var manager = PluginManager.init(allocator, "/tmp/plugins");
+    defer manager.deinit();
+
+    const result = manager.loadPlugin("missing", "/tmp/nonexistent.so");
+    try std.testing.expectError(error.PluginNotFound, result);
+}
+
+test "PluginManager loadAllPlugins" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const f1 = try tmp_dir.dir.createFile("plugin_a.so", .{});
+    f1.close();
+    const f2 = try tmp_dir.dir.createFile("plugin_b.dylib", .{});
+    f2.close();
+    const f3 = try tmp_dir.dir.createFile("readme.txt", .{});
+    f3.close();
+
+    const base_path = try tmp_dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(base_path);
+
+    var manager = PluginManager.init(allocator, base_path);
+    defer manager.deinit();
+
+    try manager.loadAllPlugins();
+    try std.testing.expectEqual(@as(usize, 2), manager.getPluginCount());
+    try std.testing.expect(manager.isPluginLoaded("plugin_a"));
+    try std.testing.expect(manager.isPluginLoaded("plugin_b"));
+}
+
+test "PluginManager broadcastEvent" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const file = try tmp_dir.dir.createFile("test_plugin.so", .{});
+    file.close();
+
+    const path = try tmp_dir.dir.realpathAlloc(allocator, "test_plugin.so");
+    defer allocator.free(path);
+
+    var manager = PluginManager.init(allocator, "/tmp/plugins");
+    defer manager.deinit();
+
+    try manager.loadPlugin("test_plugin", path);
+
+    _ = PluginManager.Event{
+        .event_type = .custom,
+        .payload = "hello",
+    };
+
+    // Since we cannot set on_event_fn through public API, broadcast just iterates
+    manager.broadcastEvent(PluginManager.Event{
+        .event_type = .custom,
+        .payload = "hello",
+    });
+    // Test mainly verifies no crash
+}
+
+test "PluginManager manifest" {
+    const manifest = PluginManifest{
+        .name = "test",
+        .version = "1.0.0",
+        .description = "Test plugin",
+        .author = "dev",
+        .dependencies = &.{},
+        .exports = &.{},
+    };
+    try std.testing.expectEqualStrings("test", manifest.name);
+}
+
+test "PluginManager broadcastEvent dummy" {
+    const allocator = std.testing.allocator;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const file = try tmp_dir.dir.createFile("test_plugin.so", .{});
+    file.close();
+
+    const path = try tmp_dir.dir.realpathAlloc(allocator, "test_plugin.so");
+    defer allocator.free(path);
+
+    var manager = PluginManager.init(allocator, "/tmp/plugins");
+    defer manager.deinit();
+
+    try manager.loadPlugin("test_plugin", path);
+
+    const dummy_event = PluginManager.Event{
+        .event_type = .custom,
+        .payload = "hello",
+    };
+
+    // Since we cannot set on_event_fn through public API, broadcast just iterates
+    manager.broadcastEvent(dummy_event);
+    // Test mainly verifies no crash
+}

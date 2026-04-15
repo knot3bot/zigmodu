@@ -30,7 +30,6 @@ pub const CacheManager = struct {
     };
 
     pub const CacheEntry = struct {
-        key: []const u8,
         value: []const u8,
         created_at: i64,
         last_accessed: i64,
@@ -51,7 +50,7 @@ pub const CacheManager = struct {
     pub fn deinit(self: *Self) void {
         var iter = self.entries.iterator();
         while (iter.next()) |entry| {
-            self.allocator.free(entry.value_ptr.key);
+            self.allocator.free(entry.key_ptr.*);
             self.allocator.free(entry.value_ptr.value);
         }
         self.entries.deinit();
@@ -65,28 +64,29 @@ pub const CacheManager = struct {
     /// 设置缓存值
     pub fn set(self: *Self, key: []const u8, value: []const u8) !void {
         // 如果缓存已满，执行淘汰
-        if (self.entries.count() >= self.max_size) {
+        if (self.entries.count() >= self.max_size and self.entries.get(key) == null) {
             try self.evict();
         }
 
-        const key_copy = try self.allocator.dupe(u8, key);
         const value_copy = try self.allocator.dupe(u8, value);
+        errdefer self.allocator.free(value_copy);
 
         const now = std.time.timestamp();
 
         // 如果键已存在，更新它
-        if (self.entries.getPtr(key_copy)) |existing| {
+        if (self.entries.getPtr(key)) |existing| {
             self.allocator.free(existing.value);
             existing.value = value_copy;
             existing.last_accessed = now;
             existing.access_count += 1;
-            self.allocator.free(key_copy);
             return;
         }
 
+        const key_copy = try self.allocator.dupe(u8, key);
+        errdefer self.allocator.free(key_copy);
+
         // 添加新条目
         const entry = CacheEntry{
-            .key = key_copy,
             .value = value_copy,
             .created_at = now,
             .last_accessed = now,
@@ -98,6 +98,7 @@ pub const CacheManager = struct {
         // 更新访问顺序（用于LRU/FIFO）
         if (self.eviction_policy == .LRU or self.eviction_policy == .FIFO) {
             const order_key = try self.allocator.dupe(u8, key_copy);
+            errdefer self.allocator.free(order_key);
             try self.access_order.append(order_key);
         }
     }
@@ -131,7 +132,7 @@ pub const CacheManager = struct {
     /// 删除缓存条目
     pub fn remove(self: *Self, key: []const u8) bool {
         const entry = self.entries.fetchRemove(key) orelse return false;
-        self.allocator.free(entry.value.key);
+        self.allocator.free(entry.key);
         self.allocator.free(entry.value.value);
 
         // 从访问顺序中移除
@@ -302,7 +303,7 @@ pub const CacheManager = struct {
     pub fn clear(self: *Self) void {
         var iter = self.entries.iterator();
         while (iter.next()) |entry| {
-            self.allocator.free(entry.value_ptr.key);
+            self.allocator.free(entry.key_ptr.*);
             self.allocator.free(entry.value_ptr.value);
         }
         self.entries.clearRetainingCapacity();

@@ -137,16 +137,16 @@ fn EventCapture(comptime T: type) type {
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{
                 .allocator = allocator,
-                .events = std.ArrayList(T).init(allocator),
+                .events = std.ArrayList(T){},
             };
         }
 
         pub fn deinit(self: *Self) void {
-            self.events.deinit();
+            self.events.deinit(self.allocator);
         }
 
         pub fn capture(self: *Self, event: T) !void {
-            try self.events.append(event);
+            try self.events.append(self.allocator, event);
         }
 
         pub fn getHandler(self: *Self) fn (T) void {
@@ -192,7 +192,7 @@ pub const TestUtils = struct {
             if (@as(u64, @intCast(std.time.milliTimestamp() - start)) > timeout_ms) {
                 return error.Timeout;
             }
-            std.time.sleep(1 * std.time.ns_per_ms);
+            std.Thread.sleep(1 * std.time.ns_per_ms);
         }
     }
 };

@@ -114,7 +114,7 @@ pub const ErrorHandler = struct {
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
-            .handlers = std.ArrayList(HandlerEntry).init(allocator),
+            .handlers = std.ArrayList(HandlerEntry){},
         };
     }
 
@@ -123,7 +123,7 @@ pub const ErrorHandler = struct {
     }
 
     pub fn register(self: *Self, error_code: ZigModuError, handler: *const fn (ErrorContext) void) !void {
-        try self.handlers.append(.{
+        try self.handlers.append(self.allocator, .{
             .error_code = error_code,
             .handler = handler,
         });
