@@ -1,6 +1,6 @@
 # ZigCtl
 
-Code generation tool for ZigModu framework.
+Code generation tool for ZigModu framework with **Modulith style** architecture.
 
 ## Installation
 
@@ -27,34 +27,36 @@ zig build run
 ```
 
 ### `module <name>`
-Generate a module boilerplate.
+Generate a module directory with Modulith structure.
 
 ```bash
 zigctl module user
+# Creates: src/modules/user/module.zig
 ```
-
-Creates `src/modules/user.zig` with module metadata and lifecycle hooks.
 
 ### `event <name>`
 Generate an event handler.
 
 ```bash
 zigctl event order-created
+# Creates: src/events/order-created.zig
 ```
 
-Creates `src/events/order-created.zig` with event struct and handler function.
-
-### `api <name>`
-Generate an API endpoint with CRUD routes.
+### `api <name> [--module <module-name>]`
+Generate an API endpoint. Optionally place within a module.
 
 ```bash
+# Standalone API
 zigctl api users
+# Creates: src/api/users.zig
+
+# API within a module (Modulith style)
+zigctl api users --module user
+# Creates: src/modules/user/api_users.zig
 ```
 
-Creates `src/api/users.zig` with GET/POST/PUT/DELETE handlers.
-
 ### `orm`
-Generate ORM models, repositories, services, and API handlers from SQL DDL. The output follows the **Spring Modulith** package-by-module pattern.
+Generate complete modules from SQL DDL with full CRUD.
 
 ```bash
 # Auto-partition by table prefix (user_profile → user module)
@@ -75,33 +77,65 @@ src/modules/{module}/
 └── api.zig          # HTTP API handlers using api.Server.zig
 ```
 
-#### Generated Architecture
+### `generate <target> [options]`
+Unified generator command supporting all targets.
 
-- **model.zig** — Structs mapped from `CREATE TABLE` definitions with:
-  - `jsonStringify()` method using original SQL field names for API stability
-  - Support for SQL COMMENT extraction (stored for documentation)
-- **persistence.zig** — `{Module}Persistence` struct that holds `SqlxBackend` and provides repository accessors
-- **service.zig** — `{Module}Service` struct that injects persistence and exposes:
-  - `list*{s}(page, size)` — Paginated list returning `PageResult(T)`
-  - `get*{s}(id)` — Get by ID
-  - `create*{s}(entity)` — Create
-  - `update*{s}(entity)` — Update
-  - `delete*{s}(id)` — Delete
-- **api.zig** — `{Module}Api` struct that injects the service into `Server.RouteGroup` handlers via `ctx.user_data`. Registers RESTful routes:
-  - `GET    /{table}s?page=0&size=10`  → paginated list
-  - `GET    /{table}s/:id`  → get by id
-  - `POST   /{table}s`      → create
-  - `PUT    /{table}s/:id`  → update
-  - `DELETE /{table}s/:id`  → delete
-- **module.zig** — ZigModu module definition with `info`, `init()`, and `deinit()`.
+```bash
+# Generate empty module
+zigctl generate module user
 
-#### Pagination
+# Generate module from SQL (same as 'orm')
+zigctl generate module --sql schema.sql --out src/modules
+
+# Generate event
+zigctl generate event order-created
+
+# Generate API within module
+zigctl generate api users --module user
+
+# Generate ORM (alias for 'orm')
+zigctl generate orm --sql schema.sql
+```
+
+## Modulith Architecture
+
+ZigCtl promotes **Modulith** (Modular Monolith) architecture:
+
+- **Package by Module**: Each module is a self-contained directory
+- **Explicit Boundaries**: Module dependencies declared in `info.dependencies`
+- **Cohesive Structure**: Domain, persistence, service, and API live together
+
+```
+src/modules/
+├── user/                      # User module
+│   ├── module.zig            # Module metadata & lifecycle
+│   ├── model.zig             # Domain models
+│   ├── persistence.zig       # Repository layer
+│   ├── service.zig           # Business logic
+│   └── api.zig               # HTTP handlers
+├── order/                     # Order module
+│   ├── module.zig
+│   ├── model.zig
+│   ├── persistence.zig
+│   ├── service.zig
+│   └── api.zig
+└── payment/                   # Payment module
+    └── ...
+```
+
+## Generated Features
+
+### Pagination
 
 List endpoints support pagination via query parameters:
 - `page` — Page number starting from 0 (default: 0)
 - `size` — Items per page (default: 10)
 
-Response format:
+```bash
+GET /user_profiles?page=0&size=10
+```
+
+Response:
 ```json
 {
   "items": [...],
@@ -111,33 +145,40 @@ Response format:
 }
 ```
 
-#### JSON Field Names
+### Stable JSON Field Names
 
-Generated models use `jsonStringify()` to ensure API stability:
-- JSON field names match original SQL column names (e.g., `user_name` not `userName`)
-- This prevents breaking API clients when refactoring database schema
+Generated models use `jsonStringify()` with original SQL column names:
+- Database: `user_name` → JSON: `"user_name"` (not `"userName"`)
+- Ensures API stability when refactoring schema
+
+### SQL to Zig Type Mapping
+
+| SQL type | Zig type |
+|---|---|
+| INT, INTEGER, BIGINT, SMALLINT, TINYINT, SERIAL | `i64` |
+| VARCHAR, TEXT, CHAR, NVARCHAR, JSON, JSONB, UUID | `[]const u8` |
+| BOOLEAN, BOOL | `bool` |
+| FLOAT, DOUBLE, REAL, NUMERIC, DECIMAL | `f64` |
+| DATETIME, TIMESTAMP, DATE, TIME | `[]const u8` |
 
 ## Examples
 
+### Complete Workflow
+
 ```bash
-# Create new project
+# 1. Create project
 zigctl new ecommerce-app
 cd ecommerce-app
 
-# Generate modules
+# 2. Generate modules manually
 zigctl module user
 zigctl module order
-zigctl module payment
 
-# Generate events
-zigctl event order-placed
-zigctl event payment-completed
+# 3. Add APIs to modules
+zigctl api users --module user
+zigctl api orders --module order
 
-# Generate APIs
-zigctl api users
-zigctl api orders
-
-# Generate ORM from schema
+# 4. Or generate everything from SQL
 zigctl orm --sql schema.sql --out src/modules
 ```
 
@@ -158,15 +199,15 @@ CREATE TABLE order_item (
 );
 ```
 
-Running `zigctl orm --sql schema.sql --out src/modules` will produce:
+Running `zigctl orm --sql schema.sql --out src/modules` produces:
 
 ```
 src/modules/
 ├── user/
 │   ├── module.zig
-│   ├── model.zig          # UserProfile/UserAddress with jsonStringify
+│   ├── model.zig          # UserProfile with jsonStringify
 │   ├── persistence.zig
-│   ├── service.zig        # Paginated CRUD methods
+│   ├── service.zig        # Paginated CRUD
 │   └── api.zig            # /user_profiles?page=0&size=10
 └── order/
     ├── module.zig
@@ -175,16 +216,6 @@ src/modules/
     ├── service.zig
     └── api.zig
 ```
-
-## SQL to Zig type mapping
-
-| SQL type | Zig type |
-|---|---|
-| INT, INTEGER, BIGINT, SMALLINT, TINYINT, SERIAL | `i64` |
-| VARCHAR, TEXT, CHAR, NVARCHAR, JSON, JSONB, UUID | `[]const u8` |
-| BOOLEAN, BOOL | `bool` |
-| FLOAT, DOUBLE, REAL, NUMERIC, DECIMAL | `f64` |
-| DATETIME, TIMESTAMP, DATE, TIME | `[]const u8` |
 
 ## Features
 
@@ -196,3 +227,4 @@ src/modules/
 - ✅ Service + API scaffolding with DI via `ctx.user_data`
 - ✅ Pagination support with PageResult
 - ✅ Stable JSON field names via jsonStringify
+- ✅ Unified `generate` command

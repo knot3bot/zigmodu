@@ -7,6 +7,7 @@ const Command = enum {
     event,
     api,
     orm,
+    generate,
     help,
     version,
 };
@@ -43,6 +44,7 @@ pub fn main() !void {
         .event => try cmdEvent(allocator, args[2..]),
         .api => try cmdApi(allocator, args[2..]),
         .orm => try cmdOrm(allocator, args[2..]),
+        .generate => try cmdGenerate(allocator, args[2..]),
         .help => printUsage(),
         .version => printVersion(),
     }
@@ -111,6 +113,7 @@ fn parseCommand(cmd: []const u8) ?Command {
     if (std.mem.eql(u8, cmd, "event")) return .event;
     if (std.mem.eql(u8, cmd, "api")) return .api;
     if (std.mem.eql(u8, cmd, "orm")) return .orm;
+    if (std.mem.eql(u8, cmd, "generate")) return .generate;
     if (std.mem.eql(u8, cmd, "help")) return .help;
     if (std.mem.eql(u8, cmd, "version")) return .version;
     if (std.mem.eql(u8, cmd, "--help")) return .help;
@@ -231,7 +234,11 @@ fn cmdModule(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const module_code = try generateModule(allocator, module_name);
     defer allocator.free(module_code);
 
-    const module_path = try std.fmt.allocPrint(allocator, "src/modules/{s}.zig", .{module_name});
+    const module_dir = try std.fmt.allocPrint(allocator, "src/modules/{s}", .{module_name});
+    defer allocator.free(module_dir);
+    try std.fs.cwd().makePath(module_dir);
+
+    const module_path = try std.fmt.allocPrint(allocator, "{s}/module.zig", .{module_dir});
     defer allocator.free(module_path);
 
     try writeFile(module_path, module_code);
@@ -262,23 +269,44 @@ fn cmdEvent(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 fn cmdApi(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.log.err("Usage: zigctl api <name>", .{});
+        std.log.err("Usage: zigctl api <name> [--module <module-name>]", .{});
         return;
     }
 
     const api_name = args[0];
+    var target_module: ?[]const u8 = null;
+
+    // Parse --module flag
+    if (args.len >= 3 and std.mem.eql(u8, args[1], "--module")) {
+        target_module = args[2];
+    }
+
     std.log.info("Generating API: {s}", .{api_name});
 
     // Generate API file
     const api_code = try generateApi(allocator, api_name);
     defer allocator.free(api_code);
 
-    const api_path = try std.fmt.allocPrint(allocator, "src/api/{s}.zig", .{api_name});
+    const api_path = if (target_module) |mod_name|
+        try std.fmt.allocPrint(allocator, "src/modules/{s}/api_{s}.zig", .{ mod_name, api_name })
+    else
+        try std.fmt.allocPrint(allocator, "src/api/{s}.zig", .{api_name});
     defer allocator.free(api_path);
+
+    // Ensure directory exists
+    if (target_module) |mod_name| {
+        const dir_path = try std.fmt.allocPrint(allocator, "src/modules/{s}", .{mod_name});
+        defer allocator.free(dir_path);
+        try std.fs.cwd().makePath(dir_path);
+    }
 
     try writeFile(api_path, api_code);
 
-    std.log.info("API {s} created at {s}", .{ api_name, api_path });
+    if (target_module) |mod_name| {
+        std.log.info("API {s} created at {s} (in module {s})", .{ api_name, api_path, mod_name });
+    } else {
+        std.log.info("API {s} created at {s}", .{ api_name, api_path });
+    }
 }
 
 // Template generators
@@ -1051,6 +1079,32 @@ fn writeModuleFiles(allocator: std.mem.Allocator, out_dir: []const u8, module_na
     try writeFile(module_path, module_code);
 
     std.log.info("Generated module '{s}' at {s}/ with {d} table(s)", .{ module_name, module_dir, tables.len });
+}
+
+fn cmdGenerate(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (args.len < 1) {
+        std.log.err("Usage: zigctl generate <module|event|api|orm> [options]", .{});
+        return;
+    }
+
+    const sub = args[0];
+    if (std.mem.eql(u8, sub, "module")) {
+        if (args.len >= 3 and std.mem.eql(u8, args[1], "--sql")) {
+            try cmdOrm(allocator, args[1..]);
+        } else if (args.len >= 2) {
+            try cmdModule(allocator, args[1..]);
+        } else {
+            std.log.err("Usage: zigctl generate module <name> | zigctl generate module --sql <file>", .{});
+        }
+    } else if (std.mem.eql(u8, sub, "event")) {
+        try cmdEvent(allocator, args[1..]);
+    } else if (std.mem.eql(u8, sub, "api")) {
+        try cmdApi(allocator, args[1..]);
+    } else if (std.mem.eql(u8, sub, "orm")) {
+        try cmdOrm(allocator, args[1..]);
+    } else {
+        std.log.err("Unknown generate target: {s}", .{sub});
+    }
 }
 
 fn cmdOrm(allocator: std.mem.Allocator, args: []const []const u8) !void {
