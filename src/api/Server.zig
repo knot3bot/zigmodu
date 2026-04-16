@@ -718,27 +718,27 @@ pub const RouteGroup = struct {
         return std.fmt.allocPrint(self.server.allocator, "{s}{s}", .{ self.prefix, path });
     }
 
-    pub fn get(self: *RouteGroup, path: []const u8, handler: HandlerFn) !void {
-        try self.handle(.GET, path, handler);
+    pub fn get(self: *RouteGroup, path: []const u8, handler: HandlerFn, user_data: ?*anyopaque) !void {
+        try self.handle(.GET, path, handler, user_data);
     }
 
-    pub fn post(self: *RouteGroup, path: []const u8, handler: HandlerFn) !void {
-        try self.handle(.POST, path, handler);
+    pub fn post(self: *RouteGroup, path: []const u8, handler: HandlerFn, user_data: ?*anyopaque) !void {
+        try self.handle(.POST, path, handler, user_data);
     }
 
-    pub fn put(self: *RouteGroup, path: []const u8, handler: HandlerFn) !void {
-        try self.handle(.PUT, path, handler);
+    pub fn put(self: *RouteGroup, path: []const u8, handler: HandlerFn, user_data: ?*anyopaque) !void {
+        try self.handle(.PUT, path, handler, user_data);
     }
 
-    pub fn delete(self: *RouteGroup, path: []const u8, handler: HandlerFn) !void {
-        try self.handle(.DELETE, path, handler);
+    pub fn delete(self: *RouteGroup, path: []const u8, handler: HandlerFn, user_data: ?*anyopaque) !void {
+        try self.handle(.DELETE, path, handler, user_data);
     }
 
-    pub fn patch(self: *RouteGroup, path: []const u8, handler: HandlerFn) !void {
-        try self.handle(.PATCH, path, handler);
+    pub fn patch(self: *RouteGroup, path: []const u8, handler: HandlerFn, user_data: ?*anyopaque) !void {
+        try self.handle(.PATCH, path, handler, user_data);
     }
 
-    pub fn handle(self: *RouteGroup, method: Method, path: []const u8, handler: HandlerFn) !void {
+    pub fn handle(self: *RouteGroup, method: Method, path: []const u8, handler: HandlerFn, user_data: ?*anyopaque) !void {
         const fp = try self.fullPath(path);
         defer self.server.allocator.free(fp);
 
@@ -752,6 +752,7 @@ pub const RouteGroup = struct {
             .path = fp,
             .handler = handler,
             .middleware = mws,
+            .user_data = user_data,
         });
     }
 };
@@ -1088,7 +1089,7 @@ test "route group" {
         fn handle(ctx: *Context) anyerror!void {
             try ctx.json(200, "{\"users\":[]}");
         }
-    }.handle);
+    }.handle, null);
 
     // Route should exist at /api/v1/users
     const matched = server.router.match(.GET, "/api/v1/users");
