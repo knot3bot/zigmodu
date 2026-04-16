@@ -169,11 +169,38 @@ fn buildUpdate(allocator: std.mem.Allocator, table: []const u8, fields: []const 
     return allocator.dupe(u8, buf.items);
 }
 
+fn buildSelectPage(allocator: std.mem.Allocator, table: []const u8, fields: []const []const u8, page: usize, size: usize) ![]u8 {
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
+    try buf.writer(allocator).writeAll("SELECT ");
+    for (fields, 0..) |f, i| {
+        if (i > 0) try buf.writer(allocator).writeAll(", ");
+        try buf.writer(allocator).writeAll(f);
+    }
+    const offset = page * size;
+    try buf.writer(allocator).print(" FROM {s} LIMIT {d} OFFSET {d}", .{ table, size, offset });
+    return allocator.dupe(u8, buf.items);
+}
+
+fn buildCount(allocator: std.mem.Allocator, table: []const u8) ![]u8 {
+return std.fmt.allocPrint(allocator, "SELECT COUNT(*) FROM {s}", .{table});
+}
+
 fn buildDelete(allocator: std.mem.Allocator, table: []const u8, pk: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "DELETE FROM {s} WHERE {s} = ?", .{ table, pk });
 }
 
-// ==================== ORM ====================
+// ==================== Pagination ====================
+
+pub fn PageResult(comptime T: type) type {
+    return struct {
+        items: []T,
+        page: usize,
+        size: usize,
+        total: usize,
+    };
+}
+
 
 /// Transaction wrapper exposed to user callbacks
 pub fn Tx(comptime B: type) type {
@@ -222,6 +249,21 @@ pub fn Orm(comptime B: type) type {
                     const sql = try buildSelectAll(self.orm.backend.allocator, meta.table_name, meta.fields);
                     defer self.orm.backend.allocator.free(sql);
                     return self.orm.backend.queryRows(T, sql, &.{});
+                }
+
+                pub fn count(self: @This()) !usize {
+                    const sql = try buildCount(self.orm.backend.allocator, meta.table_name);
+                    defer self.orm.backend.allocator.free(sql);
+                    const result = try self.orm.backend.queryRow(struct { count: i64 }, sql, &.{});
+                    return @intCast(result.?.count);
+                }
+
+                pub fn findPage(self: @This(), page: usize, size: usize) !PageResult(T) {
+                    const sql = try buildSelectPage(self.orm.backend.allocator, meta.table_name, meta.fields, page, size);
+                    defer self.orm.backend.allocator.free(sql);
+                    const items = try self.orm.backend.queryRows(T, sql, &.{});
+                    const total = try self.count();
+                    return .{ .items = items, .page = page, .size = size, .total = total };
                 }
 
                 pub fn insert(self: @This(), entity: T) !T {

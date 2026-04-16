@@ -519,6 +519,7 @@ const ColumnDef = struct {
     col_type: ColumnType,
     nullable: bool,
     is_primary_key: bool,
+    comment: ?[]const u8,
 };
 
 const TableDef = struct {
@@ -639,7 +640,7 @@ fn parseColumnDef(allocator: std.mem.Allocator, text: []const u8) !ColumnDef {
             std.mem.startsWith(u8, ustr, "UNIQUE") or
             std.mem.startsWith(u8, ustr, "INDEX") or
             std.mem.startsWith(u8, ustr, "KEY")) {
-            return ColumnDef{ .name = try allocator.dupe(u8, ""), .col_type = .unknown, .nullable = true, .is_primary_key = false };
+            return ColumnDef{ .name = try allocator.dupe(u8, ""), .col_type = .unknown, .nullable = true, .is_primary_key = false, .comment = null };
         }
     }
 
@@ -660,7 +661,21 @@ fn parseColumnDef(allocator: std.mem.Allocator, text: []const u8) !ColumnDef {
     if (std.mem.indexOf(u8, rest_upper, "NOT NULL") != null) nullable = false;
     if (std.mem.indexOf(u8, rest_upper, "PRIMARY KEY") != null) is_primary_key = true;
 
-    return ColumnDef{ .name = name, .col_type = col_type, .nullable = nullable, .is_primary_key = is_primary_key };
+    // Parse COMMENT '...'
+    var comment: ?[]const u8 = null;
+    const comment_upper = "COMMENT";
+    if (std.mem.indexOf(u8, rest_upper, comment_upper)) |cidx| {
+        var ci = i + cidx + comment_upper.len;
+        skipWhitespaceAndComments(text, &ci);
+        if (ci < text.len and text[ci] == '\'') {
+            ci += 1;
+            const cstart = ci;
+            while (ci < text.len and text[ci] != '\'') ci += 1;
+            comment = try allocator.dupe(u8, text[cstart..ci]);
+        }
+    }
+
+    return ColumnDef{ .name = name, .col_type = col_type, .nullable = nullable, .is_primary_key = is_primary_key, .comment = comment };
 }
 
 fn parseColumns(allocator: std.mem.Allocator, text: []const u8, i: *usize) ![]ColumnDef {
@@ -754,6 +769,15 @@ fn generateModuleModel(allocator: std.mem.Allocator, module_name: []const u8, ta
             };
             try writer.print("    {s}: {s},\n", .{ col.name, zig_type });
         }
+        try writer.print("\n    pub fn jsonStringify(self: @This(), jws: anytype) !void {{\n", .{});
+        try writer.writeAll("        try jws.beginObject();\n");
+        for (table.columns) |col| {
+            if (col.col_type == .unknown and col.name.len == 0) continue;
+            try writer.print("        try jws.objectField(\"{s}\");\n", .{col.name});
+            try writer.print("        try jws.write(self.{s});\n", .{col.name});
+        }
+        try writer.writeAll("        try jws.endObject();\n");
+        try writer.writeAll("    }\n");
         try writer.writeAll("};\n\n");
     }
 
@@ -826,9 +850,9 @@ fn generateModuleService(allocator: std.mem.Allocator, module_name: []const u8, 
         const list_method = try std.fmt.allocPrint(allocator, "list{s}s", .{model_name});
         defer allocator.free(list_method);
 
-        try writer.print("    pub fn {s}(self: *{s}Service) ![]model.{s} {{\n", .{ list_method, pascal_module, model_name });
+        try writer.print("    pub fn {s}(self: *{s}Service, page: usize, size: usize) !zigmodu.orm.PageResult(model.{s}) {{\n", .{ list_method, pascal_module, model_name });
         try writer.print("        var repo = self.persistence.{s}Repo();\n", .{method_name});
-        try writer.writeAll("        return try repo.findAll();\n");
+        try writer.writeAll("        return try repo.findPage(page, size);\n");
         try writer.writeAll("    }\n\n");
 
         try writer.print("    pub fn get{s}(self: *{s}Service, id: i64) !?model.{s} {{\n", .{ model_name, pascal_module, model_name });
@@ -919,8 +943,12 @@ fn generateModuleApi(allocator: std.mem.Allocator, module_name: []const u8, tabl
 
         try writer.print("    fn {s}(ctx: *zigmodu.api.Server.Context) !void {{\n", .{list_fn});
         try writer.print("        const self: *{s}Api = @ptrCast(@alignCast(ctx.user_data.?));\n", .{pascal_module});
-        try writer.print("        const items = try self.service.{s}();\n", .{list_fn});
-        try writer.writeAll("        try ctx.jsonStruct(200, items);\n");
+        try writer.writeAll("        const page_str = ctx.query.get(\"page\") orelse \"0\";\n");
+        try writer.writeAll("        const size_str = ctx.query.get(\"size\") orelse \"10\";\n");
+        try writer.writeAll("        const page = try std.fmt.parseInt(usize, page_str, 10);\n");
+        try writer.writeAll("        const size = try std.fmt.parseInt(usize, size_str, 10);\n");
+        try writer.print("        const result = try self.service.{s}(page, size);\n", .{list_fn});
+        try writer.writeAll("        try ctx.jsonStruct(200, result);\n");
         try writer.writeAll("    }\n\n");
 
         try writer.print("    fn {s}(ctx: *zigmodu.api.Server.Context) !void {{\n", .{get_fn});
@@ -1056,7 +1084,10 @@ fn cmdOrm(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer {
         for (tables) |t| {
             allocator.free(t.name);
-            for (t.columns) |c| allocator.free(c.name);
+            for (t.columns) |c| {
+                allocator.free(c.name);
+                if (c.comment) |com| allocator.free(com);
+            }
             allocator.free(t.columns);
         }
         allocator.free(tables);
