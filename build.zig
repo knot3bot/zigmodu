@@ -200,6 +200,9 @@ pub fn build(b: *std.Build) void {
         .name = "zigctl",
         .root_module = zigctl_mod,
     });
+
+    // Install zigctl CLI tool
+    b.installArtifact(zigctl_exe);
     const zigctl_run = b.addRunArtifact(zigctl_exe);
     if (b.args) |args| {
         zigctl_run.addArgs(args);
