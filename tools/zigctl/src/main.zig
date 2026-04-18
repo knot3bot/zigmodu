@@ -314,13 +314,22 @@ fn generateBuildZig(allocator: std.mem.Allocator, project_name: []const u8) ![]c
         \\    const target = b.standardTargetOptions(.{});
         \\    const optimize = b.standardOptimizeOption(.{});
         \\
+        \\    const zigmodu_mod = b.addModule("zigmodu", .{
+        \\        .root_source_file = b.path("~/.zigmodu/src/root.zig"),
+        \\        .target = target,
+        \\        .optimize = optimize,
+        \\    });
+        \\
+        \\    const exe_mod = b.createModule(.{
+        \\        .root_source_file = b.path("src/main.zig"),
+        \\        .target = target,
+        \\        .optimize = optimize,
+        \\    });
+        \\    exe_mod.addImport("zigmodu", zigmodu_mod);
+        \\
         \\    const exe = b.addExecutable(.{
         \\        .name = "app",
-        \\        .root_module = b.createModule(.{
-        \\            .root_source_file = b.path("src/main.zig"),
-        \\            .target = target,
-        \\            .optimize = optimize,
-        \\        }),
+        \\        .root_module = exe_mod,
         \\    });
         \\
         \\    b.installArtifact(exe);
@@ -334,12 +343,15 @@ fn generateBuildZig(allocator: std.mem.Allocator, project_name: []const u8) ![]c
         \\    const run_step = b.step("run", "Run the app");
         \\    run_step.dependOn(&run_cmd.step);
         \\
+        \\    const unit_tests_mod = b.createModule(.{
+        \\        .root_source_file = b.path("src/tests.zig"),
+        \\        .target = target,
+        \\        .optimize = optimize,
+        \\    });
+        \\    unit_tests_mod.addImport("zigmodu", zigmodu_mod);
+        \\
         \\    const unit_tests = b.addTest(.{
-        \\        .root_module = b.createModule(.{
-        \\            .root_source_file = b.path("src/tests.zig"),
-        \\            .target = target,
-        \\            .optimize = optimize,
-        \\        }),
+        \\        .root_module = unit_tests_mod,
         \\    });
         \\
         \\    const run_unit_tests = b.addRunArtifact(unit_tests);
@@ -356,13 +368,9 @@ fn generateBuildZon(allocator: std.mem.Allocator, project_name: []const u8) ![]c
         \\.{
         \\    .name = .myapp,
         \\    .version = "0.1.0",
-        \\    .fingerprint = 0x0000000000000000,
+        \\    .fingerprint = 0x123456789abcdef0,
         \\    .minimum_zig_version = "0.16.0",
-        \\    .dependencies = .{
-        \\        .zigmodu = .{
-        \\            .path = "../zigmodu",
-        \\        },
-        \\    },
+        \\    .dependencies = .{},
         \\    .paths = .{
         \\        "build.zig",
         \\        "build.zig.zon",
