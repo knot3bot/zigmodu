@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "zigctl",
+        .name = "zmodu",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -21,10 +21,10 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run zigctl");
+    const run_step = b.step("run", "Run zmodu");
     run_step.dependOn(&run_cmd.step);
 
-    const install_step = b.step("install-zigctl", "Install zigctl globally");
+    const install_step = b.step("install-zmodu", "Install zmodu globally");
     install_step.dependOn(b.getInstallStep());
 
     const unit_tests = b.addTest(.{

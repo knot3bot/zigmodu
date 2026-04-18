@@ -1,17 +1,17 @@
-# ZigCtl
+# ZModu
 
 Code generation tool for ZigModu framework with **Modulith style** architecture.
 
 ## Installation
 
 ```bash
-cd tools/zigctl
-zig build install-zigctl
+cd tools/zmodu
+zig build install-zmodu
 ```
 
 Or run directly:
 ```bash
-cd tools/zigctl
+cd tools/zmodu
 zig build run -- <command>
 ```
 
@@ -21,7 +21,7 @@ zig build run -- <command>
 Create a new ZigModu project.
 
 ```bash
-zigctl new myapp
+zmodu new myapp
 cd myapp
 zig build run
 ```
@@ -30,7 +30,7 @@ zig build run
 Generate a module directory with Modulith structure.
 
 ```bash
-zigctl module user
+zmodu module user
 # Creates: src/modules/user/module.zig
 ```
 
@@ -38,7 +38,7 @@ zigctl module user
 Generate an event handler.
 
 ```bash
-zigctl event order-created
+zmodu event order-created
 # Creates: src/events/order-created.zig
 ```
 
@@ -47,11 +47,11 @@ Generate an API endpoint. Optionally place within a module.
 
 ```bash
 # Standalone API
-zigctl api users
+zmodu api users
 # Creates: src/api/users.zig
 
 # API within a module (Modulith style)
-zigctl api users --module user
+zmodu api users --module user
 # Creates: src/modules/user/api_users.zig
 ```
 
@@ -60,10 +60,10 @@ Generate complete modules from SQL DDL with full CRUD.
 
 ```bash
 # Auto-partition by table prefix (user_profile → user module)
-zigctl orm --sql schema.sql --out src/modules
+zmodu orm --sql schema.sql --out src/modules
 
 # Force all tables into a single module
-zigctl orm --sql schema.sql --module user --out src/modules
+zmodu orm --sql schema.sql --module user --out src/modules
 ```
 
 Creates a complete module directory for each inferred module:
@@ -82,24 +82,24 @@ Unified generator command supporting all targets.
 
 ```bash
 # Generate empty module
-zigctl generate module user
+zmodu generate module user
 
 # Generate module from SQL (same as 'orm')
-zigctl generate module --sql schema.sql --out src/modules
+zmodu generate module --sql schema.sql --out src/modules
 
 # Generate event
-zigctl generate event order-created
+zmodu generate event order-created
 
 # Generate API within module
-zigctl generate api users --module user
+zmodu generate api users --module user
 
 # Generate ORM (alias for 'orm')
-zigctl generate orm --sql schema.sql
+zmodu generate orm --sql schema.sql
 ```
 
 ## Modulith Architecture
 
-ZigCtl promotes **Modulith** (Modular Monolith) architecture:
+ZModu promotes **Modulith** (Modular Monolith) architecture:
 
 - **Package by Module**: Each module is a self-contained directory
 - **Explicit Boundaries**: Module dependencies declared in `info.dependencies`
@@ -167,19 +167,19 @@ Generated models use `jsonStringify()` with original SQL column names:
 
 ```bash
 # 1. Create project
-zigctl new ecommerce-app
+zmodu new ecommerce-app
 cd ecommerce-app
 
 # 2. Generate modules manually
-zigctl module user
-zigctl module order
+zmodu module user
+zmodu module order
 
 # 3. Add APIs to modules
-zigctl api users --module user
-zigctl api orders --module order
+zmodu api users --module user
+zmodu api orders --module order
 
 # 4. Or generate everything from SQL
-zigctl orm --sql schema.sql --out src/modules
+zmodu orm --sql schema.sql --out src/modules
 ```
 
 ### Example SQL Schema
@@ -199,7 +199,7 @@ CREATE TABLE order_item (
 );
 ```
 
-Running `zigctl orm --sql schema.sql --out src/modules` produces:
+Running `zmodu orm --sql schema.sql --out src/modules` produces:
 
 ```
 src/modules/

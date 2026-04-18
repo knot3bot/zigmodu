@@ -1,4 +1,4 @@
-// ZigCtl - Code generation tool for ZigModu
+// ZModu - Code generation tool for ZigModu
 const std = @import("std");
 
 const Command = enum {
@@ -42,8 +42,9 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
 
+    const home = init.environ_map.get("HOME") orelse "/tmp";
     switch (command) {
-        .new => try cmdNew(init.io, allocator, args.items[2..]),
+        .new => try cmdNew(init.io, allocator, home, args.items[2..]),
         .module => try cmdModule(init.io, allocator, args.items[2..]),
         .event => try cmdEvent(init.io, allocator, args.items[2..]),
         .api => try cmdApi(init.io, allocator, args.items[2..]),
@@ -129,10 +130,10 @@ fn parseCommand(cmd: []const u8) ?Command {
 
 fn printUsage() void {
     const usage =
-        \\ZigCtl - Code generation tool for ZigModu
+        \\ZModu - Code generation tool for ZigModu
         \\
         \\Usage:
-        \\  zigctl <command> [options]
+        \\  zmodu <command> [options]
         \\
         \\Commands:
         \\  new <name>      Create new ZigModu project
@@ -144,23 +145,23 @@ fn printUsage() void {
         \\  version         Show version
         \\
         \\Examples:
-        \\  zigctl new myapp
-        \\  zigctl module user
-        \\  zigctl event order-created
-        \\  zigctl api users
-        \\  zigctl orm --sql schema.sql --out src/modules
+        \\  zmodu new myapp
+        \\  zmodu module user
+        \\  zmodu event order-created
+        \\  zmodu api users
+        \\  zmodu orm --sql schema.sql --out src/modules
         \\
     ;
     std.log.info("{s}", .{usage});
 }
 
 fn printVersion() void {
-    std.log.info("zigctl version 0.5.5", .{});
+    std.log.info("zmodu version 0.5.5", .{});
 }
 
-fn cmdNew(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+fn cmdNew(io: std.Io, allocator: std.mem.Allocator, home: []const u8, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.log.err("Usage: zigctl new <project-name>", .{});
+        std.log.err("Usage: zmodu new <project-name>", .{});
         return;
     }
 
@@ -186,7 +187,7 @@ fn cmdNew(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
     }
 
     // Generate build.zig
-    const build_zig = try generateBuildZig(allocator, project_name);
+    const build_zig = try generateBuildZig(allocator, project_name, home);
     defer allocator.free(build_zig);
 
     const build_path = try std.fmt.allocPrint(allocator, "{s}/build.zig", .{project_name});
@@ -218,7 +219,7 @@ fn cmdNew(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
 
 fn cmdModule(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.log.err("Usage: zigctl module <name>", .{});
+        std.log.err("Usage: zmodu module <name>", .{});
         return;
     }
 
@@ -243,7 +244,7 @@ fn cmdModule(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8)
 
 fn cmdEvent(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.log.err("Usage: zigctl event <name>", .{});
+        std.log.err("Usage: zmodu event <name>", .{});
         return;
     }
 
@@ -264,7 +265,7 @@ fn cmdEvent(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) 
 
 fn cmdApi(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.log.err("Usage: zigctl api <name> [--module <module-name>]", .{});
+        std.log.err("Usage: zmodu api <name> [--module <module-name>]", .{});
         return;
     }
 
@@ -305,61 +306,67 @@ fn cmdApi(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
 }
 
 // Template generators
-fn generateBuildZig(allocator: std.mem.Allocator, project_name: []const u8) ![]const u8 {
+fn generateBuildZig(allocator: std.mem.Allocator, project_name: []const u8, home: []const u8) ![]const u8 {
     _ = project_name;
-    return try allocator.dupe(u8,
-        \\const std = @import("std");
-        \\
-        \\pub fn build(b: *std.Build) void {
-        \\    const target = b.standardTargetOptions(.{});
-        \\    const optimize = b.standardOptimizeOption(.{});
-        \\
-        \\    const zigmodu_mod = b.addModule("zigmodu", .{
-        \\        .root_source_file = b.path("~/.zigmodu/src/root.zig"),
-        \\        .target = target,
-        \\        .optimize = optimize,
-        \\    });
-        \\
-        \\    const exe_mod = b.createModule(.{
-        \\        .root_source_file = b.path("src/main.zig"),
-        \\        .target = target,
-        \\        .optimize = optimize,
-        \\    });
-        \\    exe_mod.addImport("zigmodu", zigmodu_mod);
-        \\
-        \\    const exe = b.addExecutable(.{
-        \\        .name = "app",
-        \\        .root_module = exe_mod,
-        \\    });
-        \\
-        \\    b.installArtifact(exe);
-        \\
-        \\    const run_cmd = b.addRunArtifact(exe);
-        \\    run_cmd.step.dependOn(b.getInstallStep());
-        \\    if (b.args) |args| {
-        \\        run_cmd.addArgs(args);
-        \\    }
-        \\
-        \\    const run_step = b.step("run", "Run the app");
-        \\    run_step.dependOn(&run_cmd.step);
-        \\
-        \\    const unit_tests_mod = b.createModule(.{
-        \\        .root_source_file = b.path("src/tests.zig"),
-        \\        .target = target,
-        \\        .optimize = optimize,
-        \\    });
-        \\    unit_tests_mod.addImport("zigmodu", zigmodu_mod);
-        \\
-        \\    const unit_tests = b.addTest(.{
-        \\        .root_module = unit_tests_mod,
-        \\    });
-        \\
-        \\    const run_unit_tests = b.addRunArtifact(unit_tests);
-        \\    const test_step = b.step("test", "Run unit tests");
-        \\    test_step.dependOn(&run_unit_tests.step);
-        \\}
-        \\
-    );
+    const zigmodu_path = try std.fmt.allocPrint(allocator, "{s}/.zigmodu/src/root.zig", .{home});
+    defer allocator.free(zigmodu_path);
+
+    var buf: std.ArrayList(u8) = std.ArrayList(u8).empty;
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "const std = @import(\"std\");\n\n");
+    try buf.appendSlice(allocator, "pub fn build(b: *std.Build) void {\n");
+    try buf.appendSlice(allocator, "    const target = b.standardTargetOptions(.{});\n");
+    try buf.appendSlice(allocator, "    const optimize = b.standardOptimizeOption(.{});\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    const zigmodu_mod = b.addModule(\"zigmodu\", .{ \n");
+    try buf.appendSlice(allocator, "        .root_source_file = .{ .cwd_relative = \"");
+    try buf.appendSlice(allocator, zigmodu_path);
+    try buf.appendSlice(allocator, "\" },\n");
+    try buf.appendSlice(allocator, "        .target = target,\n");
+    try buf.appendSlice(allocator, "        .optimize = optimize,\n");
+    try buf.appendSlice(allocator, "    });\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    const exe_mod = b.createModule(.{ \n");
+    try buf.appendSlice(allocator, "        .root_source_file = b.path(\"src/main.zig\"),\n");
+    try buf.appendSlice(allocator, "        .target = target,\n");
+    try buf.appendSlice(allocator, "        .optimize = optimize,\n");
+    try buf.appendSlice(allocator, "    });\n");
+    try buf.appendSlice(allocator, "    exe_mod.addImport(\"zigmodu\", zigmodu_mod);\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    const exe = b.addExecutable(.{ \n");
+    try buf.appendSlice(allocator, "        .name = \"app\",\n");
+    try buf.appendSlice(allocator, "        .root_module = exe_mod,\n");
+    try buf.appendSlice(allocator, "    });\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    b.installArtifact(exe);\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    const run_cmd = b.addRunArtifact(exe);\n");
+    try buf.appendSlice(allocator, "    run_cmd.step.dependOn(b.getInstallStep());\n");
+    try buf.appendSlice(allocator, "    if (b.args) |args| {\n");
+    try buf.appendSlice(allocator, "        run_cmd.addArgs(args);\n");
+    try buf.appendSlice(allocator, "    }\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    const run_step = b.step(\"run\", \"Run the app\");\n");
+    try buf.appendSlice(allocator, "    run_step.dependOn(&run_cmd.step);\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    const unit_tests_mod = b.createModule(.{ \n");
+    try buf.appendSlice(allocator, "        .root_source_file = b.path(\"src/tests.zig\"),\n");
+    try buf.appendSlice(allocator, "        .target = target,\n");
+    try buf.appendSlice(allocator, "        .optimize = optimize,\n");
+    try buf.appendSlice(allocator, "    });\n");
+    try buf.appendSlice(allocator, "    unit_tests_mod.addImport(\"zigmodu\", zigmodu_mod);\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    const unit_tests = b.addTest(.{ \n");
+    try buf.appendSlice(allocator, "        .root_module = unit_tests_mod,\n");
+    try buf.appendSlice(allocator, "    });\n");
+    try buf.appendSlice(allocator, "\n");
+    try buf.appendSlice(allocator, "    const run_unit_tests = b.addRunArtifact(unit_tests);\n");
+    try buf.appendSlice(allocator, "    const test_step = b.step(\"test\", \"Run unit tests\");\n");
+    try buf.appendSlice(allocator, "    test_step.dependOn(&run_unit_tests.step);\n");
+    try buf.appendSlice(allocator, "}\n");
+
+    return buf.toOwnedSlice(allocator);
 }
 
 fn generateBuildZon(allocator: std.mem.Allocator, project_name: []const u8) ![]const u8 {
@@ -388,6 +395,8 @@ fn generateMainZig(allocator: std.mem.Allocator, project_name: []const u8) ![]co
         \\
         \\pub fn main(init: std.process.Init) !void {
         \\    const allocator = init.gpa;
+        \\    _ = allocator;
+        \\
         \\
         \\    std.log.info("Application started!", .{});
         \\
@@ -745,7 +754,7 @@ fn generateModuleModel(allocator: std.mem.Allocator, module_name: []const u8, ta
     
     try buf.appendSlice(allocator, "//! Auto-generated models for module: ");
     try buf.appendSlice(allocator, module_name);
-    try buf.appendSlice(allocator, "\n//! Generated by zigctl orm\n//! Do not modify manually\n\n");
+    try buf.appendSlice(allocator, "\n//! Generated by zmodu orm\n//! Do not modify manually\n\n");
     try buf.appendSlice(allocator, "const std = @import(\"std\");\n\n");
 
     for (tables) |table| {
@@ -786,7 +795,7 @@ fn generateModulePersistence(allocator: std.mem.Allocator, module_name: []const 
     
     try buf.appendSlice(allocator, "//! Auto-generated ORM persistence for module: ");
     try buf.appendSlice(allocator, module_name);
-    try buf.appendSlice(allocator, "\n//! Generated by zigctl orm\n//! Do not modify manually\n\n");
+    try buf.appendSlice(allocator, "\n//! Generated by zmodu orm\n//! Do not modify manually\n\n");
     try buf.appendSlice(allocator, "const std = @import(\"std\");\n");
     try buf.appendSlice(allocator, "const zigmodu = @import(\"zigmodu\");\n");
     try buf.appendSlice(allocator, "const model = @import(\"model.zig\");\n\n");
@@ -822,7 +831,7 @@ fn generateModuleService(allocator: std.mem.Allocator, module_name: []const u8, 
     
     try buf.appendSlice(allocator, "//! Auto-generated service for module: ");
     try buf.appendSlice(allocator, module_name);
-    try buf.appendSlice(allocator, "\n//! Generated by zigctl orm\n//! Do not modify manually\n\n");
+    try buf.appendSlice(allocator, "\n//! Generated by zmodu orm\n//! Do not modify manually\n\n");
     try buf.appendSlice(allocator, "const std = @import(\"std\");\n");
     try buf.appendSlice(allocator, "const model = @import(\"model.zig\");\n");
     try buf.appendSlice(allocator, "const persistence = @import(\"persistence.zig\");\n\n");
@@ -880,7 +889,7 @@ fn generateModuleApi(allocator: std.mem.Allocator, module_name: []const u8, tabl
     
     try buf.appendSlice(allocator, "//! Auto-generated API for module: ");
     try buf.appendSlice(allocator, module_name);
-    try buf.appendSlice(allocator, "\n//! Generated by zigctl orm\n//! Do not modify manually\n\n");
+    try buf.appendSlice(allocator, "\n//! Generated by zmodu orm\n//! Do not modify manually\n\n");
     try buf.appendSlice(allocator, "const std = @import(\"std\");\n");
     try buf.appendSlice(allocator, "const zigmodu = @import(\"zigmodu\");\n");
     try buf.appendSlice(allocator, "const service = @import(\"service.zig\");\n");
@@ -986,7 +995,7 @@ fn generateModuleApi(allocator: std.mem.Allocator, module_name: []const u8, tabl
 fn generateModuleZig(allocator: std.mem.Allocator, module_name: []const u8) ![]const u8 {
     return try std.fmt.allocPrint(allocator,
         \\//! ZigModu module definition for: {s}
-        \\//! Generated by zigctl orm
+        \\//! Generated by zmodu orm
         \\
         \\const std = @import("std");
         \\const zigmodu = @import("zigmodu");
@@ -1048,7 +1057,7 @@ fn writeModuleFiles(io: std.Io, allocator: std.mem.Allocator, out_dir: []const u
 
 fn cmdGenerate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.log.err("Usage: zigctl generate <module|event|api|orm> [options]", .{});
+        std.log.err("Usage: zmodu generate <module|event|api|orm> [options]", .{});
         return;
     }
 
@@ -1059,7 +1068,7 @@ fn cmdGenerate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
         } else if (args.len >= 2) {
             try cmdModule(io, allocator, args[1..]);
         } else {
-            std.log.err("Usage: zigctl generate module <name> | zigctl generate module --sql <file>", .{});
+            std.log.err("Usage: zmodu generate module <name> | zmodu generate module --sql <file>", .{});
         }
     } else if (std.mem.eql(u8, sub, "event")) {
         try cmdEvent(io, allocator, args[1..]);
@@ -1092,7 +1101,7 @@ fn cmdOrm(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
     }
 
     if (sql_path == null) {
-        std.log.err("Usage: zigctl orm --sql <file> [--out <dir>] [--module <name>]", .{});
+        std.log.err("Usage: zmodu orm --sql <file> [--out <dir>] [--module <name>]", .{});
         return;
     }
 

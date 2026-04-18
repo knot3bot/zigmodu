@@ -144,29 +144,39 @@ build_zigmodu() {
     fi
 }
 
-# Install zigctl CLI tool
+# Install zmodu CLI tool
 install_cli() {
-    print_info "Installing zigctl CLI tool..."
+    print_info "Installing zmodu CLI tool...";
+
+    # Create bin directory if it doesn't exist
+    mkdir -p "$BIN_DIR"
+
+    # Build zmodu specifically
+    cd "$INSTALL_DIR"
+    if ! zig build zmodu; then
+        print_error "Failed to build zmodu!";
+install_cli() {
+    print_info "Installing zmodu CLI tool..."
     
     # Create bin directory if it doesn't exist
     mkdir -p "$BIN_DIR"
     
-    # Build zigctl specifically
+    # Build zmodu specifically
     cd "$INSTALL_DIR"
-    if ! zig build zigctl; then
-        print_error "Failed to build zigctl!"
+    if ! zig build zmodu; then
+        print_error "Failed to build zmodu!"
         exit 1
     fi
     
-    # Copy zigctl binary
-    local zigctl_binary="$INSTALL_DIR/zig-out/bin/zigctl"
+    # Copy zmodu binary
+    local zmodu_binary="$INSTALL_DIR/zig-out/bin/zmodu"
     
-    if [ -f "$zigctl_binary" ]; then
-        cp "$zigctl_binary" "$BIN_DIR/zigctl"
-        chmod +x "$BIN_DIR/zigctl"
-        print_success "zigctl CLI tool installed to $BIN_DIR/zigctl"
+    if [ -f "$zmodu_binary" ]; then
+        cp "$zmodu_binary" "$BIN_DIR/zmodu"
+        chmod +x "$BIN_DIR/zmodu"
+        print_success "zmodu CLI tool installed to $BIN_DIR/zmodu"
     else
-        print_error "zigctl binary not found at $zigctl_binary"
+        print_error "zmodu binary not found at $zmodu_binary"
         exit 1
     fi
 }
@@ -216,11 +226,11 @@ verify_installation() {
     
     export PATH="$PATH:$BIN_DIR"
     
-    if command_exists zigctl; then
+    if command_exists zmodu; then
         print_success "Installation verified!"
-        print_info "ZigModu CLI is available: zigctl"
+        print_info "ZigModu CLI is available: zmodu"
     else
-        print_warning "zigctl command not found in PATH"
+        print_warning "zmodu command not found in PATH"
         print_info "You may need to restart your shell or run: source ~/.bashrc"
     fi
 }
@@ -240,10 +250,10 @@ print_next_steps() {
     echo -e "     ${YELLOW}source ~/.bashrc${NC}  # or ~/.zshrc"
     echo ""
     echo "  2. Verify installation:"
-    echo -e "     ${YELLOW}zigctl help${NC}"
+    echo -e "     ${YELLOW}zmodu help${NC}"
     echo ""
     echo "  3. Create your first project:"
-    echo -e "     ${YELLOW}zigctl new myapp${NC}"
+    echo -e "     ${YELLOW}zmodu new myapp${NC}"
     echo -e "     ${YELLOW}cd myapp${NC}"
     echo -e "     ${YELLOW}zig build run${NC}"
     echo ""
@@ -266,9 +276,9 @@ uninstall() {
     fi
     
     # Remove CLI binary
-    if [ -f "$BIN_DIR/zigctl" ]; then
-        rm "$BIN_DIR/zigctl"
-        print_success "Removed $BIN_DIR/zigctl"
+    if [ -f "$BIN_DIR/zmodu" ]; then
+        rm "$BIN_DIR/zmodu"
+        print_success "Removed $BIN_DIR/zmodu"
     fi
     
     print_success "ZigModu uninstalled successfully!"

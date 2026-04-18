@@ -189,24 +189,24 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Generate documentation");
     docs_step.dependOn(&docs_run.step);
 
-    // ZigCtl step
-    const zigctl_mod = b.createModule(.{
-        .root_source_file = b.path("tools/zigctl/src/main.zig"),
+    // ZModu step
+    const zmodu_mod = b.createModule(.{
+        .root_source_file = b.path("tools/zmodu/src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const zigctl_exe = b.addExecutable(.{
-        .name = "zigctl",
-        .root_module = zigctl_mod,
+    const zmodu_exe = b.addExecutable(.{
+        .name = "zmodu",
+        .root_module = zmodu_mod,
     });
 
-    // Install zigctl CLI tool
-    b.installArtifact(zigctl_exe);
-    const zigctl_run = b.addRunArtifact(zigctl_exe);
+    // Install zmodu CLI tool
+    b.installArtifact(zmodu_exe);
+    const zmodu_run = b.addRunArtifact(zmodu_exe);
     if (b.args) |args| {
-        zigctl_run.addArgs(args);
+        zmodu_run.addArgs(args);
     }
-    const zigctl_step = b.step("zigctl", "Run zigctl code generator");
-    zigctl_step.dependOn(&zigctl_run.step);
+    const zmodu_step = b.step("zmodu", "Run zmodu code generator");
+    zmodu_step.dependOn(&zmodu_run.step);
 }
