@@ -240,7 +240,8 @@ pub const HttpClient = struct {
                 if (attempt < self.retry_policy.max_retries) {
                     const delay = self.retry_policy.calculateDelay(attempt);
                     std.log.warn("Request failed, retrying in {d}ms (attempt {d}/{d})", .{ delay, attempt + 1, self.retry_policy.max_retries });
-                    // std.Thread.sleep(delay * std.time.ns_per_ms);// TODO: 0.16.0 needs io
+                    // Note: Blocking sleep unavailable in Zig 0.16.0 sync context
+                    // In async context, use: io.sleep(delay * std.time.ms_per_s, io)
                 }
                 continue;
             };

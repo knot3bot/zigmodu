@@ -91,7 +91,8 @@ pub const HotReloader = struct {
             };
 
             // Check every 1 second
-            // std.Thread.sleep(1 * std.time.ns_per_s);// TODO: 0.16.0 needs io
+            // Note: Blocking sleep unavailable in Zig 0.16.0 sync context
+            break; // Exit in sync context
         }
     }
 

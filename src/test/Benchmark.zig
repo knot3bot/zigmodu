@@ -509,7 +509,8 @@ test "BenchmarkScenarios" {
         .module_name = "test_module",
         .init_fn = struct {
             fn init() !void {
-                // std.Thread.sleep(1 * std.time.ns_per_ms);// TODO: 0.16.0 needs io
+                // Note: Blocking sleep unavailable in Zig 0.16.0
+                _ = {};
             }
         }.init,
         .deinit_fn = struct {

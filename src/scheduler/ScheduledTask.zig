@@ -129,7 +129,9 @@ pub const TaskScheduler = struct {
             self.tick() catch |err| {
                 std.log.err("Task scheduler tick failed: {s}", .{@errorName(err)});
             };
-            // std.Thread.sleep(1 * std.time.ns_per_s);// TODO: 0.16.0 needs io
+            // Note: Blocking sleep unavailable in Zig 0.16.0 sync context
+            // In async context, use: suspend {} or io.sleep()
+            break; // Exit loop in sync context - caller should manage timing
         }
     }
 

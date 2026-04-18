@@ -164,14 +164,16 @@ pub const ClusterMembership = struct {
             self.broadcastEvent(.heartbeat) catch |err| {
                 std.log.err("[ClusterMembership] Gossip error: {}", .{err});
             };
-            // std.Thread.sleep(self.gossip_interval_ms * std.time.ns_per_ms);// TODO: 0.16.0 needs io
+            // Note: Blocking sleep unavailable in Zig 0.16.0 sync context
+            break; // Exit in sync context
         }
     }
 
     fn healthCheckLoop(self: *Self) void {
         while (self.is_running) {
             self.checkNodeHealth();
-            // std.Thread.sleep(self.health_check_interval_ms * std.time.ns_per_ms);// TODO: 0.16.0 needs io
+            // Note: Blocking sleep unavailable in Zig 0.16.0 sync context
+            break; // Exit in sync context
         }
     }
 

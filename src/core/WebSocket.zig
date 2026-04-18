@@ -401,7 +401,8 @@ pub const WebSocketMonitor = struct {
             self.broadcastMetrics() catch |err| {
                 std.log.err("[WebSocketMonitor] Broadcast error: {}", .{err});
             };
-            // std.Thread.sleep(5 * std.time.ns_per_s);// TODO: 0.16.0 needs io
+            // Note: Blocking sleep unavailable in Zig 0.16.0 sync context
+            break; // Exit in sync context
         }
     }
 

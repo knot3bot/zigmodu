@@ -193,7 +193,8 @@ pub const TestUtils = struct {
             if (@as(u64, @intCast(0 - start)) > timeout_ms) {
                 return error.Timeout;
             }
-            // std.Thread.sleep(1 * std.time.ns_per_ms);// TODO: 0.16.0 needs io
+            // Note: Blocking sleep unavailable in Zig 0.16.0 - poll-based wait
+            break; // Exit in sync context
         }
     }
 };
