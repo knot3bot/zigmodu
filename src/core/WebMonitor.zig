@@ -43,9 +43,6 @@ pub const WebMonitor = struct {
         self.server = try address.listen(self.io, .{
             .reuse_address = true,
         });
-        self.server = try std.Io.net.listen(&address, self.io, .{
-            .reuse_address = true,
-        });
 
         self.is_running = true;
         std.log.info("[WebMonitor] Server started on http://0.0.0.0:{d}", .{self.port});

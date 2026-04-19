@@ -48,7 +48,8 @@ pub const WebSocketServer = struct {
     pub fn start(self: *Self) !void {
         if (self.is_running) return;
 
-        const address = try std.Io.net.IpAddress.parseIp4("0.0.0.0", self.port);
+        var address = try std.Io.net.IpAddress.parseIp4("0.0.0.0", self.port);
+        self.server = try address.listen(self.io, .{ .reuse_address = true });
         self.server = try std.Io.net.listen(&address, self.io, .{ .reuse_address = true });
         self.is_running = true;
 

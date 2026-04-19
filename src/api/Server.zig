@@ -812,7 +812,7 @@ pub const Server = struct {
             return error.ConnectionRefused;
         };
 
-        var server = std.Io.net.listen(&addr, self.io, .{
+        var server = addr.listen(self.io, .{
             .reuse_address = true,
             .kernel_backlog = 128,
         }) catch {
