@@ -1,7 +1,8 @@
 const std = @import("std");
 const ApplicationModules = @import("Module.zig").ApplicationModules;
 
-// ⚠️ EXPERIMENTAL: This module is incomplete and not production-ready.
+/// WebSocket support for real-time monitoring
+/// Provides RFC 6455 WebSocket server functionality for live module updates
 /// WebSocket support for real-time monitoring
 /// Provides RFC 6455 WebSocket server functionality for live module updates
 pub const WebSocketServer = struct {
@@ -401,8 +402,8 @@ pub const WebSocketMonitor = struct {
             self.broadcastMetrics() catch |err| {
                 std.log.err("[WebSocketMonitor] Broadcast error: {}", .{err});
             };
-            // Note: Blocking sleep unavailable in Zig 0.16.0 sync context
-            break; // Exit in sync context
+            // Broadcast every 5 seconds
+            std.Io.sleep(self.ws_server.io, .{ .nanoseconds = 5_000_000_000 }, .real) catch break;
         }
     }
 

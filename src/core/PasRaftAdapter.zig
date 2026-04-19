@@ -131,7 +131,7 @@ pub const PasRaftAdapter = struct {
 
 test "PasRaftAdapter initialization" {
     const allocator = std.testing.allocator;
-    var bus = DistributedEventBus.init(allocator);
+    var bus = try DistributedEventBus.init(allocator, std.testing.io, "test-node");
     defer bus.deinit();
 
     var cluster = try ClusterMembership.init(allocator, "node-1", try std.Io.net.IpAddress.parseIp4("127.0.0.1", 18081), &bus);
@@ -145,7 +145,7 @@ test "PasRaftAdapter initialization" {
 
 test "PasRaftAdapter propose operation" {
     const allocator = std.testing.allocator;
-    var bus = DistributedEventBus.init(allocator);
+    var bus = try DistributedEventBus.init(allocator, std.testing.io, "test-node");
     defer bus.deinit();
 
     var cluster = try ClusterMembership.init(allocator, "node-1", try std.Io.net.IpAddress.parseIp4("127.0.0.1", 18081), &bus);
@@ -160,7 +160,7 @@ test "PasRaftAdapter propose operation" {
 
 test "PasRaftAdapter cluster status" {
     const allocator = std.testing.allocator;
-    var bus = DistributedEventBus.init(allocator);
+    var bus = try DistributedEventBus.init(allocator, std.testing.io, "test-node");
     defer bus.deinit();
 
     var cluster = try ClusterMembership.init(allocator, "node-1", try std.Io.net.IpAddress.parseIp4("127.0.0.1", 18081), &bus);

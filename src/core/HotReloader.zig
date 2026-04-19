@@ -3,7 +3,10 @@ const Application = @import("../Application.zig").Application;
 const ApplicationModules = @import("Module.zig").ApplicationModules;
 const ArrayList = std.array_list.Managed;
 
-// ⚠️ EXPERIMENTAL: This module is incomplete and not production-ready.
+// Module Hot-Reloading System
+// Watches module files for changes and reloads them dynamically
+// Note: Due to Zig's compile-time nature, true hot-reloading is limited
+// This system provides file watching and triggers recompilation
 /// Module Hot-Reloading System
 /// Watches module files for changes and reloads them dynamically
 /// Note: Due to Zig's compile-time nature, true hot-reloading is limited
@@ -90,9 +93,8 @@ pub const HotReloader = struct {
                 std.log.err("[HotReloader] Error checking for changes: {}", .{err});
             };
 
-            // Check every 1 second
-            // Note: Blocking sleep unavailable in Zig 0.16.0 sync context
-            break; // Exit in sync context
+            // Poll every 1 second using Io.sleep
+            std.Io.sleep(self.io, .{ .nanoseconds = 1_000_000_000 }, .real) catch break;
         }
     }
 

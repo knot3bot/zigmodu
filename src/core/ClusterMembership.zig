@@ -391,7 +391,7 @@ pub const ClusterMembership = struct {
 test "ClusterMembership initialization" {
     const allocator = std.testing.allocator;
 
-    var bus = DistributedEventBus.init(allocator, std.testing.io);
+    var bus = try DistributedEventBus.init(allocator, std.testing.io, "test-node");
     defer bus.deinit();
 
     const addr = try std.Io.net.IpAddress.parseIp4("127.0.0.1", 18081);
@@ -405,7 +405,7 @@ test "ClusterMembership initialization" {
 test "ClusterMembership leader election" {
     const allocator = std.testing.allocator;
 
-    var bus = DistributedEventBus.init(allocator, std.testing.io);
+    var bus = try DistributedEventBus.init(allocator, std.testing.io, "test-node");
     defer bus.deinit();
 
     const addr = try std.Io.net.IpAddress.parseIp4("127.0.0.1", 18082);
@@ -430,7 +430,7 @@ test "ClusterMembership leader election" {
 test "ClusterMembership node health tracking" {
     const allocator = std.testing.allocator;
 
-    var bus = DistributedEventBus.init(allocator, std.testing.io);
+    var bus = try DistributedEventBus.init(allocator, std.testing.io, "test-node");
     defer bus.deinit();
 
     const addr = try std.Io.net.IpAddress.parseIp4("127.0.0.1", 18084);

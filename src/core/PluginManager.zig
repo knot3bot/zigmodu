@@ -1,6 +1,7 @@
 const std = @import("std");
 
-// ⚠️ EXPERIMENTAL: This module is incomplete and not production-ready.
+/// Plugin System for dynamic module loading
+/// Supports loading shared libraries (.so on Linux, .dll on Windows, .dylib on macOS)
 /// Plugin System for dynamic module loading
 
 /// Plugin System for dynamic module loading
