@@ -17,7 +17,8 @@ pub const WebSocketServer = struct {
     clients_mutex: std.Io.Mutex,
     on_connect_cb: ?*const fn (*WebSocketClient) void,
     on_message_cb: ?*const fn (*WebSocketClient, []const u8) void,
-
+    allowed_origins: []const []const u8 = &.{},
+    
     pub fn init(allocator: std.mem.Allocator, io: std.Io, port: u16) Self {
         return .{
             .allocator = allocator,
@@ -109,7 +110,28 @@ pub const WebSocketServer = struct {
             _ = w.writeAll(response) catch {};
             return;
         };
+        // Validate Origin header if allowed_origins is configured
+        if (self.allowed_origins.len > 0) {
+            const origin = extractHeaderValue(request, "Origin: ");
+            if (origin) |o| {
+                var origin_allowed = false;
+                for (self.allowed_origins) |allowed| {
+                    if (std.mem.eql(u8, allowed, o)) {
+                        origin_allowed = true;
+                        break;
+                    }
+                }
+                if (!origin_allowed) {
+                    const response = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n";
+                    var write_buf: [256]u8 = undefined;
+                    var w = conn.writer(self.io, &write_buf);
+                    _ = w.writeAll(response) catch {};
+                    return;
+                }
+            }
+        }
 
+        // Generate accept key
         // Generate accept key
         const magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
         var hash_input: [60]u8 = undefined;

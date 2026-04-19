@@ -21,7 +21,33 @@ pub fn cors(config: CorsConfig) api.Middleware {
         .func = struct {
             fn mw(ctx: *api.Context, next: api.HandlerFn, user_data: ?*anyopaque) anyerror!void {
                 const cfg: *const CorsConfig = @ptrCast(@alignCast(user_data.?));
-                try ctx.setHeader("Access-Control-Allow-Origin", cfg.allow_origins[0]);
+                const origin = ctx.headers.get("Origin") orelse "";
+                
+                // Validate origin against whitelist; reject if not allowed
+                var origin_allowed = false;
+                if (std.mem.eql(u8, origin, "")) {
+                    origin_allowed = true; // Same-origin request
+                } else {
+                    for (cfg.allow_origins) |allowed| {
+                        if (std.mem.eql(u8, allowed, "*") or std.mem.eql(u8, allowed, origin)) {
+                            origin_allowed = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!origin_allowed) {
+                    ctx.status_code = 403;
+                    ctx.responded = true;
+                    return;
+                }
+                
+                if (cfg.allow_origins.len > 0 and !std.mem.eql(u8, cfg.allow_origins[0], "*")) {
+                    try ctx.setHeader("Access-Control-Allow-Origin", origin);
+                    try ctx.setHeader("Vary", "Origin");
+                } else if (cfg.allow_origins.len > 0) {
+                    try ctx.setHeader("Access-Control-Allow-Origin", cfg.allow_origins[0]);
+                }
                 try ctx.setHeader("Access-Control-Allow-Methods", cfg.allow_methods);
                 try ctx.setHeader("Access-Control-Allow-Headers", cfg.allow_headers);
                 const max_age_str = try std.fmt.allocPrint(ctx.allocator, "{d}", .{cfg.max_age});
@@ -275,4 +301,3 @@ test "jwtAuth middleware rejects missing authorization" {
     try std.testing.expectEqual(@as(u16, 401), ctx.status_code);
     try std.testing.expect(ctx.responded);
 }
-

@@ -50,26 +50,11 @@ pub const Row = struct {
 
 /// Query results
 pub const Rows = struct {
-    allocator: std.mem.Allocator,
+    arena: std.heap.ArenaAllocator,
     rows: []const Row,
 
     pub fn deinit(self: *Rows) void {
-        for (self.rows) |row| {
-            for (row.columns) |col| {
-                self.allocator.free(col);
-            }
-            self.allocator.free(row.columns);
-            for (row.values) |v| {
-                if (v) |val| {
-                    switch (val) {
-                        .string => |s| self.allocator.free(s),
-                        else => {},
-                    }
-                }
-            }
-            self.allocator.free(row.values);
-        }
-        self.allocator.free(self.rows);
+        self.arena.deinit();
     }
 };
 
@@ -259,6 +244,10 @@ pub const SQLiteConn = struct {
     fn queryFn(ptr: *anyopaque, allocator: std.mem.Allocator, sql_str: []const u8, args: []const Value) errors.ResultT(Rows) {
         _ = allocator;
         const self = @as(*SQLiteConn, @ptrCast(@alignCast(ptr)));
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        errdefer arena.deinit();
+        const arena_alloc = arena.allocator();
+
         var stmt: ?*sqlite3_c.sqlite3_stmt = null;
         const rc = sqlite3_c.sqlite3_prepare_v2(self.db, @ptrCast(sql_str.ptr), @intCast(sql_str.len), &stmt, null);
         if (rc != sqlite3_c.SQLITE_OK or stmt == null) return error.DatabaseError;
@@ -268,45 +257,23 @@ pub const SQLiteConn = struct {
 
         const col_count = sqlite3_c.sqlite3_column_count(stmt);
         var rows_list: std.ArrayList(Row) = std.ArrayList(Row).empty;
-        var success = false;
-        defer {
-            if (!success) {
-                for (rows_list.items) |row| {
-                    for (row.columns) |col| {
-                        self.allocator.free(col);
-                    }
-                    self.allocator.free(row.columns);
-                    for (row.values) |v| {
-                        if (v) |val| {
-                            switch (val) {
-                                .string => |s| self.allocator.free(s),
-                                else => {},
-                            }
-                        }
-                    }
-                    self.allocator.free(row.values);
-                }
-            }
-            rows_list.deinit(self.allocator);
-        }
 
         while (sqlite3_c.sqlite3_step(stmt) == sqlite3_c.SQLITE_ROW) {
-            const columns = self.allocator.alloc([]const u8, @intCast(col_count)) catch return error.DatabaseError;
-            const values = self.allocator.alloc(?Value, @intCast(col_count)) catch return error.DatabaseError;
+            const columns = arena_alloc.alloc([]const u8, @intCast(col_count)) catch return error.DatabaseError;
+            const values = arena_alloc.alloc(?Value, @intCast(col_count)) catch return error.DatabaseError;
             for (0..@intCast(col_count)) |i| {
                 const raw_name = sqlite3_c.sqlite3_column_name(stmt, @intCast(i));
                 const name_len = std.mem.len(raw_name);
                 const name = raw_name[0..name_len];
-                columns[i] = self.allocator.dupe(u8, name) catch return error.DatabaseError;
-                values[i] = readSQLiteValue(self.allocator, stmt, @intCast(i));
+                columns[i] = arena_alloc.dupe(u8, name) catch return error.DatabaseError;
+                values[i] = readSQLiteValue(arena_alloc, stmt, @intCast(i));
             }
-            rows_list.append(self.allocator, .{ .allocator = self.allocator, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
 
-        const rows_slice = self.allocator.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
+        const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        success = true;
-        return Rows{ .allocator = self.allocator, .rows = rows_slice };
+        return Rows{ .arena = arena, .rows = rows_slice };
     }
 
     fn execFn(ptr: *anyopaque, sql_str: []const u8, args: []const Value) errors.ResultT(ExecResult) {
@@ -470,6 +437,10 @@ pub const PostgresConn = struct {
 
     fn queryFn(ptr: *anyopaque, allocator: std.mem.Allocator, sql_str: []const u8, args: []const Value) errors.ResultT(Rows) {
         const self = @as(*PostgresConn, @ptrCast(@alignCast(ptr)));
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+        const arena_alloc = arena.allocator();
+
         const res = execParams(self, sql_str, args) orelse return error.DatabaseError;
         defer libpq_c.PQclear(res);
 
@@ -479,48 +450,26 @@ pub const PostgresConn = struct {
         const n_cols = libpq_c.PQnfields(res);
 
         var rows_list: std.ArrayList(Row) = std.ArrayList(Row).empty;
-        var success = false;
-        defer {
-            if (!success) {
-                for (rows_list.items) |row| {
-                    for (row.columns) |col| {
-                        allocator.free(col);
-                    }
-                    allocator.free(row.columns);
-                    for (row.values) |v| {
-                        if (v) |val| {
-                            switch (val) {
-                                .string => |s| allocator.free(s),
-                                else => {},
-                            }
-                        }
-                    }
-                    allocator.free(row.values);
-                }
-            }
-            rows_list.deinit(allocator);
-        }
 
         for (0..@intCast(n_rows)) |r| {
-            const columns = allocator.alloc([]const u8, @intCast(n_cols)) catch return error.DatabaseError;
-            const values = allocator.alloc(?Value, @intCast(n_cols)) catch return error.DatabaseError;
+            const columns = arena_alloc.alloc([]const u8, @intCast(n_cols)) catch return error.DatabaseError;
+            const values = arena_alloc.alloc(?Value, @intCast(n_cols)) catch return error.DatabaseError;
             for (0..@intCast(n_cols)) |c| {
                 const name = std.mem.span(libpq_c.PQfname(res, @intCast(c)));
-                columns[c] = allocator.dupe(u8, name) catch return error.DatabaseError;
+                columns[c] = arena_alloc.dupe(u8, name) catch return error.DatabaseError;
                 if (libpq_c.PQgetisnull(res, @intCast(r), @intCast(c)) == 1) {
                     values[c] = null;
                 } else {
                     const val = std.mem.span(libpq_c.PQgetvalue(res, @intCast(r), @intCast(c)));
-                    values[c] = .{ .string = allocator.dupe(u8, val) catch return error.DatabaseError };
+                    values[c] = .{ .string = arena_alloc.dupe(u8, val) catch return error.DatabaseError };
                 }
             }
-            rows_list.append(allocator, .{ .allocator = allocator, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
 
-        const rows_slice = allocator.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
+        const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        success = true;
-        return Rows{ .allocator = allocator, .rows = rows_slice };
+        return Rows{ .arena = arena, .rows = rows_slice };
     }
 
     fn execFn(ptr: *anyopaque, sql_str: []const u8, args: []const Value) errors.ResultT(ExecResult) {
@@ -659,7 +608,14 @@ fn formatQuery(allocator: std.mem.Allocator, sql: []const u8, args: []const Valu
                 .float => |v| try buf.print(allocator, "{d}", .{v}),
                 .string => |v| {
                     try buf.append(allocator, '\'');
-                    try buf.appendSlice(allocator, v);
+                    // Escape single quotes to prevent SQL injection
+                    for (v) |char| {
+                        if (char == '\'') {
+                            try buf.appendSlice(allocator, "''");
+                        } else {
+                            try buf.append(allocator, char);
+                        }
+                    }
                     try buf.append(allocator, '\'');
                 },
                 .bool => |v| try buf.appendSlice(allocator, if (v) "1" else "0"),
@@ -695,6 +651,10 @@ pub const MySqlConn = struct {
 
     fn queryFn(ptr: *anyopaque, allocator: std.mem.Allocator, sql_str: []const u8, args: []const Value) errors.ResultT(Rows) {
         const self = @as(*MySqlConn, @ptrCast(@alignCast(ptr)));
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+        const arena_alloc = arena.allocator();
+
         const query = formatQuery(self.allocator, sql_str, args) catch return error.DatabaseError;
         defer self.allocator.free(query);
 
@@ -706,62 +666,36 @@ pub const MySqlConn = struct {
         const n_cols = libmysql_c.mysql_num_fields(res);
         const n_rows = libmysql_c.mysql_num_rows(res);
 
-        const field_names = allocator.alloc([]const u8, n_cols) catch return error.DatabaseError;
-        defer {
-            for (field_names) |f| allocator.free(f);
-            allocator.free(field_names);
-        }
+        const field_names = arena_alloc.alloc([]const u8, n_cols) catch return error.DatabaseError;
         for (0..n_cols) |c| {
             const field = libmysql_c.mysql_fetch_field(res) orelse return error.DatabaseError;
             const name = std.mem.span(field.name);
-            field_names[c] = allocator.dupe(u8, name) catch return error.DatabaseError;
+            field_names[c] = arena_alloc.dupe(u8, name) catch return error.DatabaseError;
         }
 
         var rows_list: std.ArrayList(Row) = std.ArrayList(Row).empty;
-        var success = false;
-        defer {
-            if (!success) {
-                for (rows_list.items) |row| {
-                    for (row.columns) |col| {
-                        allocator.free(col);
-                    }
-                    allocator.free(row.columns);
-                    for (row.values) |v| {
-                        if (v) |val| {
-                            switch (val) {
-                                .string => |s| allocator.free(s),
-                                else => {},
-                            }
-                        }
-                    }
-                    allocator.free(row.values);
-                }
-            }
-            rows_list.deinit(allocator);
-        }
 
         for (0..n_rows) |_| {
             const row_data = libmysql_c.mysql_fetch_row(res);
             const lengths = libmysql_c.mysql_fetch_lengths(res);
-            const columns = allocator.alloc([]const u8, n_cols) catch return error.DatabaseError;
-            const values = allocator.alloc(?Value, n_cols) catch return error.DatabaseError;
+            const columns = arena_alloc.alloc([]const u8, n_cols) catch return error.DatabaseError;
+            const values = arena_alloc.alloc(?Value, n_cols) catch return error.DatabaseError;
             for (0..n_cols) |c| {
-                columns[c] = allocator.dupe(u8, field_names[c]) catch return error.DatabaseError;
+                columns[c] = arena_alloc.dupe(u8, field_names[c]) catch return error.DatabaseError;
                 if (row_data == null or row_data.?[c] == null) {
                     values[c] = null;
                 } else {
                     const len = lengths[c];
                     const val = row_data.?[c].?[0..len];
-                    values[c] = .{ .string = allocator.dupe(u8, val) catch return error.DatabaseError };
+                    values[c] = .{ .string = arena_alloc.dupe(u8, val) catch return error.DatabaseError };
                 }
             }
-            rows_list.append(allocator, .{ .allocator = allocator, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
 
-        const rows_slice = allocator.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
+        const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        success = true;
-        return Rows{ .allocator = allocator, .rows = rows_slice };
+        return Rows{ .arena = arena, .rows = rows_slice };
     }
 
     fn execFn(ptr: *anyopaque, sql_str: []const u8, args: []const Value) errors.ResultT(ExecResult) {
@@ -881,48 +815,32 @@ pub const SQLiteStmt = struct {
 
     fn queryFn(ptr: *anyopaque, allocator: std.mem.Allocator, args: []const Value) errors.ResultT(Rows) {
         const self = @as(*SQLiteStmt, @ptrCast(@alignCast(ptr)));
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+        const arena_alloc = arena.allocator();
+
         _ = sqlite3_c.sqlite3_reset(self.stmt);
         try bindSQLite(self.stmt.?, args);
 
         const col_count = sqlite3_c.sqlite3_column_count(self.stmt);
         var rows_list: std.ArrayList(Row) = std.ArrayList(Row).empty;
-        var success = false;
-        defer {
-            if (!success) {
-                for (rows_list.items) |row| {
-                    for (row.columns) |col| allocator.free(col);
-                    allocator.free(row.columns);
-                    for (row.values) |v| {
-                        if (v) |val| {
-                            switch (val) {
-                                .string => |s| allocator.free(s),
-                                else => {},
-                            }
-                        }
-                    }
-                    allocator.free(row.values);
-                }
-            }
-            rows_list.deinit(allocator);
-        }
 
         while (sqlite3_c.sqlite3_step(self.stmt) == sqlite3_c.SQLITE_ROW) {
-            const columns = allocator.alloc([]const u8, @intCast(col_count)) catch return error.DatabaseError;
-            const values = allocator.alloc(?Value, @intCast(col_count)) catch return error.DatabaseError;
+            const columns = arena_alloc.alloc([]const u8, @intCast(col_count)) catch return error.DatabaseError;
+            const values = arena_alloc.alloc(?Value, @intCast(col_count)) catch return error.DatabaseError;
             for (0..@intCast(col_count)) |i| {
                 const raw_name = sqlite3_c.sqlite3_column_name(self.stmt, @intCast(i));
                 const name_len = std.mem.len(raw_name);
                 const name = raw_name[0..name_len];
-                columns[i] = allocator.dupe(u8, name) catch return error.DatabaseError;
-                values[i] = readSQLiteValue(allocator, self.stmt, @intCast(i));
+                columns[i] = arena_alloc.dupe(u8, name) catch return error.DatabaseError;
+                values[i] = readSQLiteValue(arena_alloc, self.stmt, @intCast(i));
             }
-            rows_list.append(allocator, .{ .allocator = allocator, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
 
-        const rows_slice = allocator.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
+        const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        success = true;
-        return Rows{ .allocator = allocator, .rows = rows_slice };
+        return Rows{ .arena = arena, .rows = rows_slice };
     }
 
     fn execFn(ptr: *anyopaque, args: []const Value) errors.ResultT(ExecResult) {
@@ -1005,6 +923,10 @@ pub const PostgresStmt = struct {
 
     fn queryFn(ptr: *anyopaque, allocator: std.mem.Allocator, args: []const Value) errors.ResultT(Rows) {
         const self = @as(*PostgresStmt, @ptrCast(@alignCast(ptr)));
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+        const arena_alloc = arena.allocator();
+
         const res = execParamsPrepared(self, args) orelse return error.DatabaseError;
         defer libpq_c.PQclear(res);
         if (libpq_c.PQresultStatus(res) != libpq_c.ExecStatusType.PGRES_TUPLES_OK) return error.DatabaseError;
@@ -1012,44 +934,25 @@ pub const PostgresStmt = struct {
         const n_rows = libpq_c.PQntuples(res);
         const n_cols = libpq_c.PQnfields(res);
         var rows_list: std.ArrayList(Row) = std.ArrayList(Row).empty;
-        var success = false;
-        defer {
-            if (!success) {
-                for (rows_list.items) |row| {
-                    for (row.columns) |col| allocator.free(col);
-                    allocator.free(row.columns);
-                    for (row.values) |v| {
-                        if (v) |val| {
-                            switch (val) {
-                                .string => |s| allocator.free(s),
-                                else => {},
-                            }
-                        }
-                    }
-                    allocator.free(row.values);
-                }
-            }
-            rows_list.deinit(allocator);
-        }
+
         for (0..@intCast(n_rows)) |r| {
-            const columns = allocator.alloc([]const u8, @intCast(n_cols)) catch return error.DatabaseError;
-            const values = allocator.alloc(?Value, @intCast(n_cols)) catch return error.DatabaseError;
+            const columns = arena_alloc.alloc([]const u8, @intCast(n_cols)) catch return error.DatabaseError;
+            const values = arena_alloc.alloc(?Value, @intCast(n_cols)) catch return error.DatabaseError;
             for (0..@intCast(n_cols)) |c| {
                 const name = std.mem.span(libpq_c.PQfname(res, @intCast(c)));
-                columns[c] = allocator.dupe(u8, name) catch return error.DatabaseError;
+                columns[c] = arena_alloc.dupe(u8, name) catch return error.DatabaseError;
                 if (libpq_c.PQgetisnull(res, @intCast(r), @intCast(c)) == 1) {
                     values[c] = null;
                 } else {
                     const val = std.mem.span(libpq_c.PQgetvalue(res, @intCast(r), @intCast(c)));
-                    values[c] = .{ .string = allocator.dupe(u8, val) catch return error.DatabaseError };
+                    values[c] = .{ .string = arena_alloc.dupe(u8, val) catch return error.DatabaseError };
                 }
             }
-            rows_list.append(allocator, .{ .allocator = allocator, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
-        const rows_slice = allocator.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
+        const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        success = true;
-        return Rows{ .allocator = allocator, .rows = rows_slice };
+        return Rows{ .arena = arena, .rows = rows_slice };
     }
 
     fn execFn(ptr: *anyopaque, args: []const Value) errors.ResultT(ExecResult) {
@@ -1101,6 +1004,10 @@ pub const MySqlStmt = struct {
 
     fn queryFn(ptr: *anyopaque, allocator: std.mem.Allocator, args: []const Value) errors.ResultT(Rows) {
         const self = @as(*MySqlStmt, @ptrCast(@alignCast(ptr)));
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+        const arena_alloc = arena.allocator();
+
         const query = formatQuery(self.allocator, self.sql, args) catch return error.DatabaseError;
         defer self.allocator.free(query);
         if (libmysql_c.mysql_real_query(self.mysql, @ptrCast(query.ptr), @intCast(query.len)) != 0) return error.DatabaseError;
@@ -1109,57 +1016,34 @@ pub const MySqlStmt = struct {
 
         const n_cols = libmysql_c.mysql_num_fields(res);
         const n_rows = libmysql_c.mysql_num_rows(res);
-        const field_names = allocator.alloc([]const u8, n_cols) catch return error.DatabaseError;
-        defer {
-            for (field_names) |f| allocator.free(f);
-            allocator.free(field_names);
-        }
+        const field_names = arena_alloc.alloc([]const u8, n_cols) catch return error.DatabaseError;
         for (0..n_cols) |c| {
             const field = libmysql_c.mysql_fetch_field(res) orelse return error.DatabaseError;
             const name = std.mem.span(field.name);
-            field_names[c] = allocator.dupe(u8, name) catch return error.DatabaseError;
+            field_names[c] = arena_alloc.dupe(u8, name) catch return error.DatabaseError;
         }
         var rows_list: std.ArrayList(Row) = std.ArrayList(Row).empty;
-        var success = false;
-        defer {
-            if (!success) {
-                for (rows_list.items) |row| {
-                    for (row.columns) |col| allocator.free(col);
-                    allocator.free(row.columns);
-                    for (row.values) |v| {
-                        if (v) |val| {
-                            switch (val) {
-                                .string => |s| allocator.free(s),
-                                else => {},
-                            }
-                        }
-                    }
-                    allocator.free(row.values);
-                }
-            }
-            rows_list.deinit(allocator);
-        }
+
         for (0..n_rows) |_| {
             const row_data = libmysql_c.mysql_fetch_row(res);
             const lengths = libmysql_c.mysql_fetch_lengths(res);
-            const columns = allocator.alloc([]const u8, n_cols) catch return error.DatabaseError;
-            const values = allocator.alloc(?Value, n_cols) catch return error.DatabaseError;
+            const columns = arena_alloc.alloc([]const u8, n_cols) catch return error.DatabaseError;
+            const values = arena_alloc.alloc(?Value, n_cols) catch return error.DatabaseError;
             for (0..n_cols) |c| {
-                columns[c] = allocator.dupe(u8, field_names[c]) catch return error.DatabaseError;
+                columns[c] = arena_alloc.dupe(u8, field_names[c]) catch return error.DatabaseError;
                 if (row_data == null or row_data.?[c] == null) {
                     values[c] = null;
                 } else {
                     const len = lengths[c];
                     const val = row_data.?[c].?[0..len];
-                    values[c] = .{ .string = allocator.dupe(u8, val) catch return error.DatabaseError };
+                    values[c] = .{ .string = arena_alloc.dupe(u8, val) catch return error.DatabaseError };
                 }
             }
-            rows_list.append(allocator, .{ .allocator = allocator, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
-        const rows_slice = allocator.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
+        const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        success = true;
-        return Rows{ .allocator = allocator, .rows = rows_slice };
+        return Rows{ .arena = arena, .rows = rows_slice };
     }
 
     fn execFn(ptr: *anyopaque, args: []const Value) errors.ResultT(ExecResult) {
@@ -2566,7 +2450,6 @@ test "sqlite in-memory query and exec" {
     try std.testing.expectEqual(@as(i64, 1), rows.rows[0].get("id").?.int);
     if (rows.rows[0].get("name")) |name_val| {
         try std.testing.expectEqualStrings("Alice", name_val.string);
-        rows.allocator.free(name_val.string);
     } else return error.TestUnexpectedResult;
 }
 
@@ -2882,7 +2765,6 @@ test "postgres live connection" {
     if (rows.rows[0].get("name")) |name_val| {
         const name_str = name_val.string;
         try std.testing.expectEqualStrings("Alice", name_str);
-        rows.allocator.free(name_str);
     } else return error.TestUnexpectedResult;
 
     _ = try client.exec("DROP TABLE IF EXISTS zigzero_test_users", &.{});

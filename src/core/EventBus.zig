@@ -1,47 +1,66 @@
 const std = @import("std");
 
 /// ListenerSet 用于 O(1) 的订阅/取消订阅操作
+/// ListenerSet 使用 ArrayList 存储回调，小数据量时比 HashMap 更高效
 fn ListenerSet(comptime CallbackType: type) type {
     return struct {
         const Self = @This();
 
-        // 使用 HashMap 存储回调，实现 O(1) 查找
-        map: std.AutoHashMap(usize, CallbackType),
+        // 使用 ArrayList 存储回调，实现更好的缓存局部性
+        list: std.ArrayList(CallbackType),
         allocator: std.mem.Allocator,
 
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{
-                .map = std.AutoHashMap(usize, CallbackType).init(allocator),
+                .list = std.ArrayList(CallbackType).empty,
                 .allocator = allocator,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            self.map.deinit();
+            self.list.deinit(self.allocator);
         }
 
         pub fn add(self: *Self, callback: CallbackType) !void {
-            const key = @intFromPtr(callback);
-            try self.map.put(key, callback);
+            try self.list.append(self.allocator, callback);
         }
 
         pub fn remove(self: *Self, callback: CallbackType) bool {
-            const key = @intFromPtr(callback);
-            return self.map.remove(key);
+            for (self.list.items, 0..) |cb, i| {
+                if (cb == callback) {
+                    _ = self.list.orderedRemove(i);
+                    return true;
+                }
+            }
+            return false;
         }
 
         pub fn contains(self: *Self, callback: CallbackType) bool {
-            const key = @intFromPtr(callback);
-            return self.map.contains(key);
+            for (self.list.items) |cb| {
+                if (cb == callback) return true;
+            }
+            return false;
         }
 
         pub fn count(self: *Self) usize {
-            return self.map.count();
+            return self.list.items.len;
         }
 
-        pub fn iterator(self: *Self) std.AutoHashMap(usize, CallbackType).Iterator {
-            return self.map.iterator();
+        pub fn iterator(self: *Self) Iterator {
+            return Iterator{ .items = self.list.items, .index = 0 };
         }
+
+        pub const Iterator = struct {
+            items: []const CallbackType,
+            index: usize,
+
+            pub fn next(self: *Iterator) ?*const CallbackType {
+                if (self.index >= self.items.len) return null;
+                const ptr = &self.items[self.index];
+                self.index += 1;
+                return ptr;
+            }
+        };
     };
 }
 
@@ -85,9 +104,8 @@ pub fn EventBus(comptime EventType: type) type {
         pub fn publish(self: *Self, event_type: EventType, payload: *anyopaque) void {
             if (self.listeners.getPtr(event_type)) |set| {
                 var iter = set.iterator();
-                while (iter.next()) |entry| {
-                    const callback = entry.value_ptr.*;
-                    callback(event_type, payload);
+                while (iter.next()) |callback| {
+                    callback.*(event_type, payload);
                 }
             }
         }
@@ -135,9 +153,8 @@ pub fn EventBus(comptime EventType: type) type {
 
         pub fn publish(self: *Self, event: T) void {
             var iter = self.listeners.iterator();
-            while (iter.next()) |entry| {
-                const callback = entry.value_ptr.*;
-                callback(event);
+            while (iter.next()) |callback| {
+                callback.*(event);
             }
         }
 

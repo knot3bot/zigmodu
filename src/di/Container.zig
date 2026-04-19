@@ -65,6 +65,19 @@ pub const Container = struct {
     pub fn get(self: *Self, comptime T: type, name: []const u8) ?*T {
         const wrapper = self.services.get(name) orelse return null;
         const expected_type = @typeName(T);
+        const expected_hash = comptime std.hash.Crc32.hash(expected_type);
+
+        // Fast path: O(1) hash comparison
+        if (wrapper.type_hash != expected_hash) {
+            std.log.warn("Type mismatch for service '{s}': expected {s}, got {s}", .{
+                name,
+                expected_type,
+                wrapper.type_name,
+            });
+            return null;
+        }
+
+        // Slow path: verify no hash collision
         if (!std.mem.eql(u8, wrapper.type_name, expected_type)) {
             std.log.warn("Type mismatch for service '{s}': expected {s}, got {s}", .{
                 name,
@@ -74,13 +87,23 @@ pub const Container = struct {
             return null;
         }
 
-        // 运行时类型哈希验证
-        const expected_hash = comptime std.hash.Crc32.hash(expected_type);
-        if (wrapper.type_hash != expected_hash) {
-            std.log.warn("Type hash mismatch for service '{s}': possible memory corruption", .{name});
+        return @ptrCast(@alignCast(wrapper.ptr));
+    }
+
+    /// Comptime-optimized get for known service names
+    /// Eliminates runtime string comparison when name is comptime-known
+    pub fn getComptime(self: *Self, comptime T: type, comptime name: []const u8) ?*T {
+        const wrapper = self.services.get(name) orelse return null;
+        const expected_type = @typeName(T);
+        // In comptime context, this comparison may be optimized away
+        if (!std.mem.eql(u8, wrapper.type_name, expected_type)) {
+            std.log.warn("Type mismatch for service '{s}': expected {s}, got {s}", .{
+                name,
+                expected_type,
+                wrapper.type_name,
+            });
             return null;
         }
-
         return @ptrCast(@alignCast(wrapper.ptr));
     }
 

@@ -151,11 +151,20 @@ pub fn build(b: *std.Build) void {
     // Test step - test the main library
     const test_step = b.step("test", "Run all tests");
 
-    const lib_test = b.addTest(.{
-        .root_module = zigmodu_mod
+    // Workaround: Use zig test directly to avoid server-mode test runner issues in 0.16.0
+    const zig_test_cmd = b.addSystemCommand(&.{
+        "zig",
+        "test",
+        "src/root.zig",
+        "-lpq",
+        "-lsqlite3",
+        "-lmysqlclient",
+        "-I/opt/homebrew/opt/libpq/include",
+        "-I/opt/homebrew/opt/mariadb-connector-c/include/mariadb",
+        "-L/opt/homebrew/opt/libpq/lib",
+        "-L/opt/homebrew/opt/mariadb-connector-c/lib",
     });
-    const run_lib_test = b.addRunArtifact(lib_test);
-    test_step.dependOn(&run_lib_test.step);
+    test_step.dependOn(&zig_test_cmd.step);
 
     // Benchmark step
     const benchmark_mod = b.createModule(.{

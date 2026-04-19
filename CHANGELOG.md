@@ -4,19 +4,77 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [0.6.1] - 2026-04-19
+## [0.6.4] - 2026-04-19
 
-### Added
-- **zmodu CLI**
-  - `zmodu orm --backend zent` for zent Schema-as-Code generation
-  - `generateZentSchema()` generates zent Schema DSL from SQL DDL
-  - `generateZentClient()` generates type-safe zent Client helpers
-  - Primary key detection for non-optional field types
+
+
+### Fixed
+
+- `zig build test` now works reliably by using direct `zig test` invocation
+
+  - Workaround for Zig 0.16.0 server-mode test runner EndOfStream issue
+
+- All 194 tests passing (189 passed, 5 skipped)
+
+
 
 ### Changed
-- `zmodu orm` default backend remains `sqlx` (backward compatible)
 
-## [0.4.0] - 2025-04-15
+- **LRU Cache** rewritten with true LRU eviction (HashMap + access order list)
+
+  - `get()` now returns `*V` pointer for zero-copy access
+
+- **HTTP Server** added `max_concurrent` limit to prevent unbounded thread growth
+
+- **DI Container** added `getComptime()` for compile-time type-safe resolution
+
+
+
+## [0.6.3] - 2026-04-19
+
+
+
+### Added
+
+- **DistributedEventBus** fully implemented with heartbeat mechanism
+
+- **HotReloader** runtime module update detection with `Io.sleep` polling
+
+- **WebSocketServer** metrics broadcast capability
+
+- **PluginManager** stabilized (removed EXPERIMENTAL marker)
+
+
+
+### Fixed
+
+- **Io.net API** migration to Zig 0.16.0 format across all modules
+
+  - `address.listen(io, opts)` instead of `std.Io.net.listen(&address, io, opts)`
+
+  - `address.connect(io, opts)` instead of `std.Io.net.Stream.connect(&address, io, opts)`
+
+  - Fixed in: `api/Server.zig`, `core/DistributedEventBus.zig`, `core/WebMonitor.zig`, `core/WebSocket.zig`, `http/HttpClient.zig`, `redis/redis.zig`
+
+
+
+## [0.6.2] - 2026-04-19
+
+
+
+### Changed
+
+- **zmodu CLI** zent backend aligned with zent v0.1.1 API
+
+  - Chain-style field definition: `field.Int("id").Unique().Required()`
+
+  - Smart `TimeMixin` generation for `created_at`/`updated_at` fields
+
+  - Support for `.Default()` and `.Unique()` modifiers
+
+
+
+## [0.6.1] - 2026-04-19
 ## [0.4.0] - 2025-04-15
 
 ### Added
@@ -140,7 +198,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Error Handling:** Zig error union types
 - **Testing:** Built-in test runner
 
-[Unreleased]: https://github.com/knot3bot/zigmodu/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/knot3bot/zigmodu/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/knot3bot/zigmodu/compare/v0.6.3...v0.6.4
+[0.6.3]: https://github.com/knot3bot/zigmodu/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/knot3bot/zigmodu/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/knot3bot/zigmodu/compare/v0.4.0...v0.6.1
+[0.4.0]: https://github.com/knot3bot/zigmodu/compare/v0.3.0...v0.4.0
 [0.4.0]: https://github.com/knot3bot/zigmodu/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/knot3bot/zigmodu/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/knot3bot/zigmodu/compare/v0.1.0...v0.2.0

@@ -8,12 +8,23 @@ pub const SecurityModule = struct {
     allocator: std.mem.Allocator,
     jwt_secret: []const u8,
     token_expiry_seconds: i64,
+    io: ?std.Io = null,
 
     pub fn init(allocator: std.mem.Allocator, jwt_secret: []const u8, token_expiry_seconds: i64) Self {
         return .{
             .allocator = allocator,
             .jwt_secret = jwt_secret,
             .token_expiry_seconds = token_expiry_seconds,
+            .io = null,
+        };
+    }
+
+    pub fn initWithIo(allocator: std.mem.Allocator, jwt_secret: []const u8, token_expiry_seconds: i64, io: std.Io) Self {
+        return .{
+            .allocator = allocator,
+            .jwt_secret = jwt_secret,
+            .token_expiry_seconds = token_expiry_seconds,
+            .io = io,
         };
     }
 
@@ -66,7 +77,7 @@ pub const SecurityModule = struct {
         user_id: []const u8,
         roles: []const []const u8,
     ) ![]const u8 {
-        const now = 0;
+        const now = if (self.io) |io| @as(i64, @intCast(@divTrunc(std.Io.Clock.Timestamp.now(io, .real).raw.nanoseconds, std.time.ns_per_s))) else 0;
         const exp = now + self.token_expiry_seconds;
 
         const header = JwtToken.JwtHeader{};
@@ -128,7 +139,7 @@ pub const SecurityModule = struct {
         defer parsed.deinit();
 
         // Check expiration
-        const now = 0;
+        const now = if (self.io) |io| @as(i64, @intCast(@divTrunc(std.Io.Clock.Timestamp.now(io, .real).raw.nanoseconds, std.time.ns_per_s))) else 0;
         if (now > parsed.value.exp) {
             return error.TokenExpired;
         }
@@ -176,10 +187,12 @@ pub const SecurityModule = struct {
     }
 
     pub fn hashPassword(self: *Self, password: []const u8) ![]const u8 {
-        // 使用 PBKDF2 进行密码哈希
         var salt: [16]u8 = undefined;
-        var prng = std.Random.DefaultPrng.init(0x12345678);
-        prng.random().bytes(&salt);
+        // Use cryptographically secure random for salt
+        var seed: [32]u8 = undefined;
+        std.mem.writeInt(u64, seed[0..8], @intCast(std.time.epoch.unix), .little);
+        var csprng = std.Random.DefaultCsprng.init(seed);
+        csprng.fill(&salt);
 
         // SAFETY: Buffer is immediately filled by pbkdf2() before use
         var derived_key: [32]u8 = undefined;

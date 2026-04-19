@@ -14,19 +14,19 @@ pub const PrometheusMetrics = struct {
     pub const Counter = struct {
         name: []const u8,
         help: []const u8,
-        value: u64 = 0,
+        value: std.atomic.Value(u64),
         labels: std.StringHashMap([]const u8),
 
         pub fn inc(self: *Counter) void {
-            self.value += 1;
+            _ = self.value.fetchAdd(1, .monotonic);
         }
 
         pub fn add(self: *Counter, value: u64) void {
-            self.value += value;
+            _ = self.value.fetchAdd(value, .monotonic);
         }
 
         pub fn get(self: *Counter) u64 {
-            return self.value;
+            return self.value.load(.monotonic);
         }
     };
 
@@ -159,11 +159,12 @@ pub const PrometheusMetrics = struct {
         const name_copy = try self.allocator.dupe(u8, name);
         const help_copy = try self.allocator.dupe(u8, help);
 
-        const counter = Counter{
-            .name = name_copy,
+const counter = Counter{
+.name = name_copy,
             .help = help_copy,
-            .labels = std.StringHashMap([]const u8).init(self.allocator),
-        };
+            .value = std.atomic.Value(u64).init(0),
+.labels = std.StringHashMap([]const u8).init(self.allocator),
+};
 
         try self.counters.put(name_copy, counter);
         return self.counters.getPtr(name_copy).?;
@@ -248,7 +249,7 @@ pub const PrometheusMetrics = struct {
             const counter = entry.value_ptr.*;
             try buf.print("# HELP {s} {s}\n", .{ counter.name, counter.help });
             try buf.print("# TYPE {s} counter\n", .{counter.name});
-            try buf.print("{s} {d}\n\n", .{ counter.name, counter.value });
+            try buf.print("{s} {d}\n\n", .{ counter.name, counter.value.load(.monotonic) });
         }
 
         // Gauges

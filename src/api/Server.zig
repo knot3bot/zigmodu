@@ -676,9 +676,89 @@ const ResponseWriter = struct {
 
         try w.print("Content-Length: {d}\r\n", .{body.len});
         try w.writeAll("\r\n");
+        try w.writeAll("\r\n");
         try w.writeAll(body);
 
         _ = try stream.write(io, buf.items);
+    }
+};
+
+/// Connection task for thread pool
+const ConnectionTask = struct {
+    server: *Server,
+    stream: *std.Io.net.Stream,
+};
+
+/// Fixed-size thread pool for handling connections
+const ThreadPool = struct {
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    threads: []std.Thread,
+    mutex: std.Io.Mutex,
+    cond: std.Io.Condition,
+    queue: std.ArrayList(ConnectionTask),
+    shutdown: bool,
+
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, num_threads: usize) !ThreadPool {
+        var pool = ThreadPool{
+            .allocator = allocator,
+            .io = io,
+            .threads = try allocator.alloc(std.Thread, num_threads),
+            .mutex = .init,
+            .cond = .init,
+            .queue = std.ArrayList(ConnectionTask).empty,
+            .shutdown = false,
+        };
+
+        for (0..num_threads) |i| {
+            pool.threads[i] = try std.Thread.spawn(.{}, workerLoop, .{&pool});
+        }
+
+        return pool;
+    }
+
+    pub fn deinit(self: *ThreadPool) void {
+        self.mutex.lock(self.io) catch return;
+        self.shutdown = true;
+        self.cond.broadcast(self.io);
+        self.mutex.unlock(self.io);
+
+        for (self.threads) |thread| {
+            thread.join();
+        }
+
+        self.allocator.free(self.threads);
+        self.queue.deinit(self.allocator);
+    }
+
+    pub fn submit(self: *ThreadPool, task: ConnectionTask) !void {
+        try self.mutex.lock(self.io);
+        defer self.mutex.unlock(self.io);
+
+        if (self.shutdown) return error.Shutdown;
+
+        try self.queue.append(self.allocator, task);
+        self.cond.signal(self.io);
+    }
+
+    fn workerLoop(self: *ThreadPool) void {
+        while (true) {
+            self.mutex.lock(self.io) catch break;
+
+            while (self.queue.items.len == 0 and !self.shutdown) {
+                self.cond.wait(&self.mutex, self.io) catch break;
+            }
+
+            if (self.shutdown and self.queue.items.len == 0) {
+                self.mutex.unlock(self.io);
+                break;
+            }
+
+            const task = self.queue.orderedRemove(0);
+            self.mutex.unlock(self.io);
+
+            task.server.handleConnection(task.stream);
+        }
     }
 };
 
@@ -767,6 +847,10 @@ pub const Server = struct {
     server_socket: ?std.Io.net.Server = null,
     max_body_size: usize,
     request_timeout_ms: u32,
+    thread_pool: ?*ThreadPool = null,
+    max_concurrent: usize = 1000,
+    active_connections: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
+
 
     pub fn init(io: std.Io, allocator: std.mem.Allocator, port: u16) Server {
         return .{
@@ -780,10 +864,17 @@ pub const Server = struct {
             .server_socket = null,
             .max_body_size = 8 * 1024 * 1024, // 8MB default
             .request_timeout_ms = 30000, // 30s default
+            .max_concurrent = 1000,
+            .active_connections = std.atomic.Value(usize).init(0),
         };
     }
 
     pub fn deinit(self: *Server) void {
+        if (self.thread_pool) |pool| {
+            pool.deinit();
+            self.allocator.destroy(pool);
+            self.thread_pool = null;
+        }
         self.router.deinit();
         self.global_middleware.deinit(self.allocator);
         if (self.server_socket) |*ss| {
@@ -791,6 +882,7 @@ pub const Server = struct {
         }
     }
 
+    /// Add a route
     /// Add a route
     pub fn addRoute(self: *Server, route: Route) !void {
         try self.router.addRoute(route);
@@ -823,33 +915,58 @@ pub const Server = struct {
         self.running.store(true, .monotonic);
 
         std.log.info("Server listening on port {d}", .{self.port});
+        // Initialize thread pool on first start
+        if (self.thread_pool == null) {
+            const cpu_count = std.Thread.getCpuCount() catch 4;
+            const pool_size = @max(4, @min(cpu_count * 2, self.max_concurrent));
+            const pool = try self.allocator.create(ThreadPool);
+            pool.* = try ThreadPool.init(self.allocator, self.io, pool_size);
+            self.thread_pool = pool;
+        }
 
         while (self.running.load(.monotonic)) {
+            // Accept connection
             const conn = server.accept(self.io) catch |err| {
                 if (!self.running.load(.monotonic)) break;
                 std.log.err("Accept error: {any}", .{err});
                 continue;
             };
 
+            // Check concurrent connection limit
+            const active = self.active_connections.load(.monotonic);
+            if (active >= self.max_concurrent) {
+                std.log.warn("Server at max concurrent connections ({d}), rejecting connection", .{self.max_concurrent});
+                conn.close(self.io);
+                continue;
+            }
+
             const conn_ptr = try self.allocator.create(std.Io.net.Stream);
             conn_ptr.* = conn;
+            _ = self.active_connections.fetchAdd(1, .monotonic);
 
-            const thread = std.Thread.spawn(.{}, handleConnection, .{ self, conn_ptr }) catch |err| {
-                std.log.err("Failed to spawn thread: {any}", .{err});
-                conn_ptr.stream.close(self.io);
+            self.thread_pool.?.submit(.{
+                .server = self,
+                .stream = conn_ptr,
+            }) catch |err| {
+                std.log.err("Failed to submit task: {any}", .{err});
+                conn.close(self.io);
                 self.allocator.destroy(conn_ptr);
+                _ = self.active_connections.fetchSub(1, .monotonic);
                 continue;
             };
-            thread.detach();
         }
     }
 
-    /// Stop the server
     pub fn stop(self: *Server) void {
         self.running.store(false, .monotonic);
         if (self.server_socket) |*ss| {
             ss.deinit(self.io);
             self.server_socket = null;
+        }
+        if (self.thread_pool) |pool| {
+            pool.deinit();
+            self.allocator.destroy(pool);
+            self.thread_pool = null;
         }
     }
 
@@ -858,6 +975,8 @@ pub const Server = struct {
         defer {
             if (close_stream) conn.close(self.io);
             self.allocator.destroy(conn);
+            // 减少活跃连接计数
+            _ = self.active_connections.fetchSub(1, .monotonic);
         }
 
         var arena = std.heap.ArenaAllocator.init(self.allocator);

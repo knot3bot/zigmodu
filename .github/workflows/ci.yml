@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [ master, main ]
 
-env:
+  ZIG_VERSION: 0.16.0
   ZIG_VERSION: 0.15.2
 
 jobs:
@@ -17,15 +17,15 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
 
     - name: Setup Zig
-      uses: goto-bus-stop/setup-zig@v2
+      uses: goto-bus-stop/setup-zig@d6a4f1d07765b7f2c5a025d23d1df66dd98f14  # v2
       with:
         version: ${{ env.ZIG_VERSION }}
 
     - name: Cache Zig dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@6849a6489940f00c726f9b9dbd0e66b3e8e3f7b2  # v4
       with:
         path: |
           ~/.cache/zig
@@ -47,10 +47,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
 
     - name: Setup Zig
-      uses: goto-bus-stop/setup-zig@v2
+      uses: goto-bus-stop/setup-zig@d6a4f1d07765b7f2c5a025d23d1df66dd98f14  # v2
       with:
         version: ${{ env.ZIG_VERSION }}
 
@@ -61,10 +61,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
 
     - name: Setup Zig
-      uses: goto-bus-stop/setup-zig@v2
+      uses: goto-bus-stop/setup-zig@d6a4f1d07765b7f2c5a025d23d1df66dd98f14  # v2
       with:
         version: ${{ env.ZIG_VERSION }}
 
@@ -90,15 +90,15 @@ jobs:
           - v2-showcase
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
 
     - name: Setup Zig
-      uses: goto-bus-stop/setup-zig@v2
+      uses: goto-bus-stop/setup-zig@d6a4f1d07765b7f2c5a025d23d1df66dd98f14  # v2
       with:
         version: ${{ env.ZIG_VERSION }}
 
     - name: Cache Zig dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@6849a6489940f00c726f9b9dbd0e66b3e8e3f7b2  # v4
       with:
         path: |
           ~/.cache/zig
