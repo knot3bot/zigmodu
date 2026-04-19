@@ -831,7 +831,7 @@ pub const Server = struct {
                 continue;
             };
 
-            const conn_ptr = try self.allocator.create(std.Io.net.Server.Connection);
+            const conn_ptr = try self.allocator.create(std.Io.net.Stream);
             conn_ptr.* = conn;
 
             const thread = std.Thread.spawn(.{}, handleConnection, .{ self, conn_ptr }) catch |err| {
@@ -853,10 +853,10 @@ pub const Server = struct {
         }
     }
 
-    fn handleConnection(self: *Server, conn: *std.Io.net.Server.Connection) void {
+    fn handleConnection(self: *Server, conn: *std.Io.net.Stream) void {
         var close_stream = true;
         defer {
-            if (close_stream) conn.stream.close(self.io);
+            if (close_stream) conn.close(self.io);
             self.allocator.destroy(conn);
         }
 
@@ -864,7 +864,7 @@ pub const Server = struct {
         defer arena.deinit();
         const arena_alloc = arena.allocator();
 
-        var stream_reader = StreamReader{ .stream = conn.stream };
+        var stream_reader = StreamReader{ .stream = conn };
 
         const start_time = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
 
@@ -875,7 +875,7 @@ pub const Server = struct {
             const status: u16 = if (err == error.BodyTooLarge) 413 else 400;
             const msg = if (err == error.BodyTooLarge) "Payload Too Large" else "Bad Request";
             const response = std.fmt.allocPrint(arena_alloc, "HTTP/1.1 {d} {s}\r\n\r\n", .{ status, msg }) catch return;
-            _ = conn.stream.write(self.io, response) catch {};
+            _ = conn.write(self.io, response) catch {};
             return;
         };
         defer request.deinit(arena_alloc);
@@ -888,7 +888,7 @@ pub const Server = struct {
             return;
         };
         defer ctx.deinit();
-        ctx.stream = conn.stream;
+        ctx.stream = conn;
 
         // Copy query params
         var query_iter = request.query.iterator();
@@ -950,7 +950,7 @@ pub const Server = struct {
         }
 
         // Send response
-        ResponseWriter.write(self.io, arena_alloc, conn.stream, ctx.status_code, &ctx.response_headers, ctx.response_body.items) catch {};
+        ResponseWriter.write(self.io, arena_alloc, conn, ctx.status_code, &ctx.response_headers, ctx.response_body.items) catch {};
     }
 
     fn executeWithMiddleware(self: *Server, ctx: *Context, final_handler: HandlerFn, route_middleware: []const Middleware) !void {

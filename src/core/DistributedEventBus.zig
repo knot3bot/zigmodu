@@ -73,7 +73,7 @@ pub const DistributedEventBus = struct {
         if (self.is_running) return;
 
         const address = try std.Io.net.IpAddress.parseIp4("0.0.0.0", port);
-        self.listener = try std.Io.net.listen(&address, self.io, .{});
+        self.listener = try address.listen(self.io, .{});
         self.is_running = true;
 
         std.log.info("[DistributedEventBus] Node '{s}' listening on port {d}", .{ self.node_id, port });
@@ -111,7 +111,7 @@ pub const DistributedEventBus = struct {
                 // Handle connection in new thread
                 const thread = std.Thread.spawn(.{}, handleConnection, .{ self, conn }) catch |err| {
                     std.log.err("[DistributedEventBus] Failed to spawn thread: {}", .{err});
-                    conn.stream.close(self.io);
+                    conn.close(self.io);
                     continue;
                 };
                 thread.detach();
@@ -142,7 +142,7 @@ pub const DistributedEventBus = struct {
         for (self.nodes.items) |*node| {
             if (node.socket) |sock| {
                 var write_buf: [4096]u8 = undefined;
-                var w = std.Io.net.Stream.writer(sock, self.io, &write_buf);
+                var w = sock.writer(self.io, &write_buf);
                 _ = w.writeAll(serialized) catch |err| {
                     std.log.warn("[DistributedEventBus] Heartbeat failed to node {s}: {}", .{ node.id, err });
                 };
@@ -150,12 +150,12 @@ pub const DistributedEventBus = struct {
         }
     }
 
-    fn handleConnection(self: *Self, conn: std.Io.net.Server.Connection) void {
-        defer conn.stream.close(self.io);
+    fn handleConnection(self: *Self, conn: std.Io.net.Stream) void {
+        defer conn.close(self.io);
 
         var buf: [4096]u8 = undefined;
         var read_buf: [4096]u8 = undefined;
-        var r = std.Io.net.Stream.reader(conn.stream, self.io, &read_buf);
+        var r = conn.reader(self.io, &read_buf);
         while (self.is_running) {
             const bytes_read = r.readSliceShort(&buf) catch |err| {
                 if (self.is_running) {
@@ -202,7 +202,7 @@ pub const DistributedEventBus = struct {
 
     /// Connect to a remote node
     pub fn connectToNode(self: *Self, node_id: []const u8, address: std.Io.net.IpAddress) !void {
-        const stream = try std.Io.net.Stream.connect(&address, self.io, .{ .mode = .stream });
+        const stream = try address.connect(self.io, .{ .mode = .stream });
 
         const id_copy = try self.allocator.dupe(u8, node_id);
         errdefer self.allocator.free(id_copy);
@@ -234,7 +234,7 @@ pub const DistributedEventBus = struct {
         for (self.nodes.items) |*node| {
             if (node.socket) |sock| {
                 var write_buf: [4096]u8 = undefined;
-                var w = std.Io.net.Stream.writer(sock, self.io, &write_buf);
+                var w = sock.writer(self.io, &write_buf);
                 _ = w.interface.writeAll(serialized) catch |err| {
                     std.log.err("[DistributedEventBus] Failed to send to node {s}: {}", .{ node.id, err });
                 };

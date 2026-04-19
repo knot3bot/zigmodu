@@ -270,7 +270,7 @@ pub const HttpClient = struct {
         // 发送请求
         if (conn.stream) |stream| {
             var write_buf: [4096]u8 = undefined;
-            var w = std.Io.net.Stream.writer(stream, self.connection_pool.io, &write_buf);
+            var w = stream.writer(self.connection_pool.io, &write_buf);
             _ = w.writeAll(request_line) catch return error.ConnectionError;
 
             // 发送 headers

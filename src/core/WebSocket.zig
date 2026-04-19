@@ -78,7 +78,7 @@ pub const WebSocketServer = struct {
 
                 const thread = std.Thread.spawn(.{}, handleConnection, .{ self, conn }) catch |err| {
                     std.log.err("[WebSocketServer] Failed to spawn thread: {}", .{err});
-                    conn.stream.close(self.io);
+                    conn.close(self.io);
                     continue;
                 };
                 thread.detach();
@@ -86,12 +86,12 @@ pub const WebSocketServer = struct {
         }
     }
 
-    fn handleConnection(self: *Self, conn: std.Io.net.Server.Connection) void {
-        defer conn.stream.close(self.io);
+    fn handleConnection(self: *Self, conn: std.Io.net.Stream) void {
+        defer conn.close(self.io);
 
         var buf: [4096]u8 = undefined;
         var read_buf: [4096]u8 = undefined;
-        var r = std.Io.net.Stream.reader(conn.stream, self.io, &read_buf);
+        var r = conn.reader(self.io, &read_buf);
         const bytes_read = r.interface.readSliceShort(&buf) catch |err| {
             std.log.err("[WebSocketServer] Read error: {}", .{err});
             return;
@@ -105,7 +105,7 @@ pub const WebSocketServer = struct {
             // Not a WebSocket upgrade request - send HTTP response
             const response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
             var write_buf: [256]u8 = undefined;
-            var w = std.Io.net.Stream.writer(conn.stream, self.io, &write_buf);
+            var w = conn.writer(self.io, &write_buf);
             _ = w.writeAll(response) catch {};
             return;
         };
@@ -133,7 +133,7 @@ pub const WebSocketServer = struct {
             "\r\n", .{accept_key}) catch return;
 
         var write_buf: [4096]u8 = undefined;
-        var w = std.Io.net.Stream.writer(conn.stream, self.io, &write_buf);
+        var w = conn.writer(self.io, &write_buf);
         _ = w.writeAll(response) catch |err| {
             std.log.err("[WebSocketServer] Handshake write error: {}", .{err});
             return;
@@ -146,7 +146,7 @@ pub const WebSocketServer = struct {
         };
         errdefer self.allocator.destroy(client);
 
-        client.* = WebSocketClient.init(self.allocator, conn.stream, self.io, self);
+        client.* = WebSocketClient.init(self.allocator, conn, self.io, self);
 
         self.clients_mutex.lock(self.io) catch return;
         self.clients.append(client) catch |err| {
@@ -241,7 +241,7 @@ pub const WebSocketClient = struct {
     pub fn run(self: *Self) void {
         var buf: [4096]u8 = undefined;
         var read_buf: [4096]u8 = undefined;
-        var r = std.Io.net.Stream.reader(self.stream, self.io, &read_buf);
+        var r = self.stream.reader(self.io, &read_buf);
         while (self.is_connected) {
             const frame = self.readFrame(&r, &buf) catch |err| {
                 if (self.is_connected) {
@@ -349,7 +349,7 @@ pub const WebSocketClient = struct {
         }
 
         var write_buf: [4096]u8 = undefined;
-        var w = std.Io.net.Stream.writer(self.stream, self.io, &write_buf);
+        var w = self.stream.writer(self.io, &write_buf);
         _ = w.writeAll(header_buf[0..header_len]) catch return error.NotConnected;
         _ = w.writeAll(payload) catch return error.NotConnected;
     }

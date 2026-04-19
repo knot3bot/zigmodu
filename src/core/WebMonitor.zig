@@ -73,7 +73,7 @@ pub const WebMonitor = struct {
                 // Handle request
                 const thread = std.Thread.spawn(.{}, handleRequest, .{ self, conn }) catch |err| {
                     std.log.err("[WebMonitor] Failed to spawn thread: {}", .{err});
-                    conn.stream.close(self.io);
+                    conn.close(self.io);
                     continue;
                 };
                 thread.detach();
@@ -81,11 +81,11 @@ pub const WebMonitor = struct {
         }
     }
 
-    fn handleRequest(self: *Self, conn: std.Io.net.Server.Connection) void {
-        defer conn.stream.close(self.io);
+    fn handleRequest(self: *Self, conn: std.Io.net.Stream) void {
+        defer conn.close(self.io);
 
         var buf: [4096]u8 = undefined;
-        var r = std.Io.net.Stream.reader(conn.stream, self.io, &buf);
+        var r = conn.reader(self.io, &buf);
         const bytes_read = r.readSliceShort(&buf) catch |err| {
             std.log.err("[WebMonitor] Read error: {}", .{err});
             return;
@@ -105,15 +105,15 @@ pub const WebMonitor = struct {
 
         // Route request
         if (std.mem.eql(u8, path, "/")) {
-            self.handleIndex(conn.stream);
+            self.handleIndex(conn);
         } else if (std.mem.eql(u8, path, "/api/modules")) {
-            self.handleModules(conn.stream);
+            self.handleModules(conn);
         } else if (std.mem.eql(u8, path, "/api/health")) {
-            self.handleHealth(conn.stream);
+            self.handleHealth(conn);
         } else if (std.mem.eql(u8, path, "/api/metrics")) {
-            self.handleMetrics(conn.stream);
+            self.handleMetrics(conn);
         } else {
-            self.handle404(conn.stream);
+            self.handle404(conn);
         }
     }
 
@@ -153,7 +153,7 @@ pub const WebMonitor = struct {
         const response = std.fmt.bufPrint(&response_buf, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {d}\r\n\r\n{s}", .{ html.len, html }) catch return;
 
         var write_buf: [2048]u8 = undefined;
-        var w = std.Io.net.Stream.writer(stream, self.io, &write_buf);
+        var w = stream.writer(self.io, &write_buf);
         _ = w.writeAll(response) catch {};
     }
 
@@ -184,7 +184,7 @@ pub const WebMonitor = struct {
         const response = std.fmt.bufPrint(&response_buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {d}\r\n\r\n{s}", .{ json.items.len, json.items }) catch return;
 
         var write_buf: [8192]u8 = undefined;
-        var w = std.Io.net.Stream.writer(stream, self.io, &write_buf);
+        var w = stream.writer(self.io, &write_buf);
         _ = w.writeAll(response) catch {};
     }
 
@@ -196,7 +196,7 @@ pub const WebMonitor = struct {
         const response = std.fmt.bufPrint(&response_buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {d}\r\n\r\n{s}", .{ json.len, json }) catch return;
 
         var write_buf: [256]u8 = undefined;
-        var w = std.Io.net.Stream.writer(stream, self.io, &write_buf);
+        var w = stream.writer(self.io, &write_buf);
         _ = w.writeAll(response) catch {};
     }
 
@@ -210,7 +210,7 @@ pub const WebMonitor = struct {
         const response = std.fmt.bufPrint(&response_buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {d}\r\n\r\n{s}", .{ json.len, json }) catch return;
 
         var write_buf: [1024]u8 = undefined;
-        var w = std.Io.net.Stream.writer(stream, self.io, &write_buf);
+        var w = stream.writer(self.io, &write_buf);
         _ = w.writeAll(response) catch {};
     }
 
@@ -222,7 +222,7 @@ pub const WebMonitor = struct {
         const response = std.fmt.bufPrint(&response_buf, "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: {d}\r\n\r\n{s}", .{ body.len, body }) catch return;
 
         var write_buf: [256]u8 = undefined;
-        var w = std.Io.net.Stream.writer(stream, self.io, &write_buf);
+        var w = stream.writer(self.io, &write_buf);
         _ = w.writeAll(response) catch {};
     }
 };
