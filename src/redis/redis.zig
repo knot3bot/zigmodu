@@ -46,13 +46,13 @@ pub const Redis = struct {
     /// Connect to Redis server
     pub fn connect(self: *Redis) !void {
         const address = std.Io.net.IpAddress.parseIp4(self.config.host, self.config.port) catch return error.RedisError;
-        self.stream = std.Io.net.tcpConnectToAddress(address) catch return error.RedisError;
+        self.stream = address.connect(self.io, .{ .mode = .stream }) catch return error.RedisError;
     }
 
     /// Disconnect from Redis server
     pub fn disconnect(self: *Redis) void {
         if (self.stream) |s| {
-            s.close();
+            s.close(self.io);
             self.stream = null;
         }
     }

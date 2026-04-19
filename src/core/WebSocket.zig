@@ -50,7 +50,6 @@ pub const WebSocketServer = struct {
 
         var address = try std.Io.net.IpAddress.parseIp4("0.0.0.0", self.port);
         self.server = try address.listen(self.io, .{ .reuse_address = true });
-        self.server = try std.Io.net.listen(&address, self.io, .{ .reuse_address = true });
         self.is_running = true;
 
         std.log.info("[WebSocketServer] Started on ws://0.0.0.0:{d}", .{self.port});
