@@ -319,13 +319,24 @@ fn parseFormBody(allocator: std.mem.Allocator, body: []const u8) !std.StringHash
 /// Simple stream reader wrapper for HTTP parsing
 const StreamReader = struct {
     stream: std.Io.net.Stream,
+    reader: std.Io.net.Stream.Reader,
     buf: [8192]u8 = undefined,
     pos: usize = 0,
     end: usize = 0,
 
+    fn init(stream: std.Io.net.Stream, io: std.Io) StreamReader {
+        return .{
+            .stream = stream,
+            .reader = std.Io.net.Stream.Reader.init(stream, io, &.{}),
+            .buf = undefined,
+            .pos = 0,
+            .end = 0,
+        };
+    }
+
     fn readByte(self: *StreamReader) !?u8 {
         if (self.pos >= self.end) {
-            const n = try self.stream.read(&self.buf);
+            const n = self.reader.read(&self.buf) catch 0;
             if (n == 0) return null;
             self.pos = 0;
             self.end = n;
@@ -358,7 +369,7 @@ const StreamReader = struct {
                 total += to_copy;
                 continue;
             }
-            const n = try self.stream.read(out[total..]);
+            const n = try self.reader.read(out[total..]);
             if (n == 0) break;
             total += n;
         }
@@ -987,7 +998,7 @@ pub const Server = struct {
         defer arena.deinit();
         const arena_alloc = arena.allocator();
 
-        var stream_reader = StreamReader{ .stream = conn };
+        var stream_reader = StreamReader.init(conn.*, self.io);
 
         const start_time = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
 
