@@ -1039,7 +1039,7 @@ pub const Server = struct {
 
         var stream_reader = StreamReader.init(conn.*, self.io);
 
-        const start_time = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
+        const start_time = std.Io.Timestamp.now(self.io, .real);
 
         var parser = RequestParser.init(arena_alloc);
         var request = parser.parse(&stream_reader, self.max_body_size) catch |err| {
@@ -1114,9 +1114,14 @@ pub const Server = struct {
         }
 
         // Check request timeout
-        const elapsed = 0 - start_time;
-        if (elapsed > self.request_timeout_ms) {
-            std.log.warn("Request timeout: {s} {s} took {d}ms", .{ request.method.toString(), request.path, elapsed });
+        const current_time = std.Io.Timestamp.now(self.io, .real);
+        const elapsed_ns = current_time.nanoseconds - start_time.nanoseconds;
+        const elapsed_ms = @divTrunc(elapsed_ns, std.time.ns_per_ms);
+        if (elapsed_ms > self.request_timeout_ms) {
+            std.log.warn("Request timeout: {s} {s} took {d}ms", .{ request.method.toString(), request.path, elapsed_ms });
+            if (!ctx.responded) {
+                ctx.sendError(408, "Request Timeout") catch {};
+            }
         }
 
         if (ctx.upgraded) {
