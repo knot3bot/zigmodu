@@ -109,8 +109,8 @@ test "validateModules success" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    try modules.register(ModuleInfo.init("inventory", "Inventory", &.{}, undefined));
-    try modules.register(ModuleInfo.init("order", "Order", &.{"inventory"}, undefined));
+    try modules.register(ModuleInfo.init("inventory", "Inventory", &.{}));
+    try modules.register(ModuleInfo.init("order", "Order", &.{"inventory"}));
 
     try validateModules(&modules);
 }
@@ -120,7 +120,7 @@ test "validateModules missing dependency" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    try modules.register(ModuleInfo.init("order", "Order", &.{"inventory"}, undefined));
+    try modules.register(ModuleInfo.init("order", "Order", &.{"inventory"}));
 
     const result = validateModules(&modules);
     try std.testing.expectError(error.DependencyNotFound, result);
@@ -131,7 +131,7 @@ test "validateModules self dependency" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    try modules.register(ModuleInfo.init("order", "Order", &.{"order"}, undefined));
+    try modules.register(ModuleInfo.init("order", "Order", &.{"order"}));
 
     const result = validateModules(&modules);
     try std.testing.expectError(error.SelfDependency, result);
@@ -142,8 +142,8 @@ test "validateModules circular dependency" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    try modules.register(ModuleInfo.init("a", "A", &.{"b"}, undefined));
-    try modules.register(ModuleInfo.init("b", "B", &.{"a"}, undefined));
+    try modules.register(ModuleInfo.init("a", "A", &.{"b"}));
+    try modules.register(ModuleInfo.init("b", "B", &.{"a"}));
 
     const result = validateModules(&modules);
     try std.testing.expectError(error.CircularDependency, result);

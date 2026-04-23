@@ -1,4 +1,5 @@
 const std = @import("std");
+const Time = @import("../core/Time.zig");
 
 /// 断路器模式 - 实现容错机制
 pub const CircuitBreaker = struct {
@@ -100,7 +101,7 @@ pub const CircuitBreaker = struct {
     /// 记录失败
     fn onFailure(self: *Self) void {
         self.failure_count += 1;
-        self.last_failure_time = 0;
+        self.last_failure_time = Time.monotonicNowSeconds();
 
         switch (self.state) {
             .CLOSED => {
@@ -123,7 +124,7 @@ pub const CircuitBreaker = struct {
     /// 更新断路器状态（检查超时）
     fn updateState(self: *Self) void {
         if (self.state == .OPEN) {
-            const now = 0;
+            const now = Time.monotonicNowSeconds();
             const elapsed = @as(u64, @intCast(now - self.last_failure_time));
 
             if (elapsed >= self.config.timeout_seconds) {

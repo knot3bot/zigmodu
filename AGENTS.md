@@ -28,6 +28,7 @@ zigmodu/
 │   │   ├── ModuleValidator.zig # Dependency validation
 │   │   ├── EventBus.zig      # Type-safe event bus
 │   │   ├── Lifecycle.zig     # startAll/stopAll functions
+│   │   ├── Time.zig          # Centralized monotonic time utility
 │   │   └── Documentation.zig # PlantUML doc generation
 │   ├── di/
 │   │   └── Container.zig     # Dependency injection container
@@ -101,7 +102,7 @@ pub fn main(init: std.process.Init) !void {
 ```zig
 .{
     .name = .zigmodu,  // MUST be enum literal, not string!
-    .version = "0.7.6",
+    .version = "0.7.0",
     .fingerprint = 0x7aa42d07b32f8d53,  // Required for new packages
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
@@ -143,6 +144,8 @@ pub fn build(b: *std.Build) void {
 3. **Module dependencies**: Use `&.{}` syntax for empty dependencies
 4. **scanModules signature**: `scanModules(allocator, .{ mod1, mod2 })` - allocator FIRST
 5. **File writer**: Use `std.ArrayList(u8)` with `.writer(allocator)` - File has no `.print()` method
+6. **Time**: Always use `@import("core/Time.zig").monotonicNowSeconds()` — NEVER use `const now = 0`
+7. **ModuleInfo.init**: Takes 3 args `(name, desc, deps)` — ptr is now optional and defaults to null
 
 ## Verification
 - ✅ `zig build` compiles successfully

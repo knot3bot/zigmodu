@@ -1,4 +1,5 @@
 const std = @import("std");
+const Time = @import("../core/Time.zig");
 
 var prng_seed = std.atomic.Value(u64).init(0);
 
@@ -79,7 +80,7 @@ pub const DistributedTracer = struct {
                 .span_id = span_id,
                 .parent_span_id = parent_span_id,
                 .name = try allocator.dupe(u8, name),
-                .start_time = @intCast(0),
+                .start_time = Time.monotonicNow(),
                 .end_time = null,
                 .attributes = std.StringHashMap([]const u8).init(allocator),
                 .events = std.ArrayList(SpanEvent).empty,
@@ -117,13 +118,13 @@ pub const DistributedTracer = struct {
         pub fn addEvent(self: *Span, allocator: std.mem.Allocator, name: []const u8) !void {
             try self.events.append(allocator, .{
                 .name = try allocator.dupe(u8, name),
-                .timestamp = @intCast(0),
+                .timestamp = Time.monotonicNow(),
                 .attributes = std.StringHashMap([]const u8).init(allocator),
             });
         }
 
         pub fn end(self: *Span) void {
-            self.end_time = @intCast(0);
+            self.end_time = Time.monotonicNow();
         }
     };
 

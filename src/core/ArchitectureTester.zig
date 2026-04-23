@@ -332,10 +332,8 @@ test "ArchitectureTester no violations" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    var order_mod: u8 = 0;
-    var inv_mod: u8 = 0;
-    try modules.register(ModuleInfo.init("order", "Order module", &.{"inventory"}, &order_mod));
-    try modules.register(ModuleInfo.init("inventory", "Inventory module", &.{}, &inv_mod));
+    try modules.register(ModuleInfo.init("order", "Order module", &.{"inventory"}));
+    try modules.register(ModuleInfo.init("inventory", "Inventory module", &.{}));
 
     var tester = ArchitectureTester.init(allocator, &modules);
     defer tester.deinit();
@@ -349,8 +347,7 @@ test "ArchitectureTester self dependency violation" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    var bad_mod: u8 = 0;
-    try modules.register(ModuleInfo.init("bad", "Bad module", &.{"bad"}, &bad_mod));
+    try modules.register(ModuleInfo.init("bad", "Bad module", &.{"bad"}));
 
     var tester = ArchitectureTester.init(allocator, &modules);
     defer tester.deinit();
@@ -365,10 +362,8 @@ test "ArchitectureTester circular dependency violation" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    var a_mod: u8 = 0;
-    var b_mod: u8 = 0;
-    try modules.register(ModuleInfo.init("a", "A", &.{"b"}, &a_mod));
-    try modules.register(ModuleInfo.init("b", "B", &.{"a"}, &b_mod));
+    try modules.register(ModuleInfo.init("a", "A", &.{"b"}));
+    try modules.register(ModuleInfo.init("b", "B", &.{"a"}));
 
     var tester = ArchitectureTester.init(allocator, &modules);
     defer tester.deinit();
@@ -382,8 +377,7 @@ test "ArchitectureTester naming convention violation" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    var bad_mod: u8 = 0;
-    try modules.register(ModuleInfo.init("BadName", "Bad", &.{}, &bad_mod));
+    try modules.register(ModuleInfo.init("BadName", "Bad", &.{}));
 
     var tester = ArchitectureTester.init(allocator, &modules);
     defer tester.deinit();
@@ -397,8 +391,7 @@ test "ArchitectureTester print report" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    var bad_mod: u8 = 0;
-    try modules.register(ModuleInfo.init("bad", "Bad", &.{"bad"}, &bad_mod));
+    try modules.register(ModuleInfo.init("bad", "Bad", &.{"bad"}));
 
     var tester = ArchitectureTester.init(allocator, &modules);
     defer tester.deinit();
@@ -412,3 +405,4 @@ test "ArchitectureTester print report" {
 
     try std.testing.expect(std.mem.indexOf(u8, report, "Architecture Test Report") != null);
 }
+

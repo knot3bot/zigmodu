@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.7.0] - 2026-04-23
+
+### ⚠️ Breaking Changes
+
+- **`ModuleInfo.init()`** now takes 3 arguments `(name, desc, deps)` instead of 4. The `ptr` field is now `?*anyopaque` (nullable, default `null`). Update all call sites.
+- **`ModuleInfo.init_fn` / `deinit_fn`** signatures changed from `fn(*anyopaque)` to `fn(?*anyopaque)`.
+
+### Added
+
+- **`core/Time.zig`** — Centralized monotonic time utility using `clock_gettime(CLOCK_MONOTONIC)`. Replaces all hardcoded `const now = 0` throughout the codebase (16 occurrences across 10 files).
+- **`root.zig`** — Exports `time` module as `zigmodu.time`.
+- **3 new tests** for Time.zig (monotonicity, positive values).
+
+### Fixed
+
+- 🔴 **Timestamp system**: All time-dependent subsystems now use real monotonic time:
+  - `CircuitBreaker` — OPEN→HALF_OPEN timeout transition now works
+  - `RateLimiter` — Token bucket refill now works with real elapsed time
+  - `SlidingWindowRateLimiter` — Window cleanup now works
+  - `CacheManager` — TTL expiration now works
+  - `DistributedTracer` — Span durations now have real values
+  - `TaskScheduler` / `Cron` — Scheduling now uses real time
+  - `HttpClient.Connection.isAlive()` — Idle timeout detection now works
+  - `ClusterMembership` — Health check timeout detection now works
+  - `sqlx/breaker.zig` — Circuit breaker now works
+
+- 🔴 **`ModuleInfo.ptr` UB**: Eliminated `undefined` initialization. Ptr is now nullable `?*anyopaque` with default `null`. Tests no longer trigger undefined behavior.
+
+- 🔴 **Version inconsistency**: Unified version to `0.7.0` across `build.zig.zon`, `main.zig`, `CHANGELOG.md`, and `AGENTS.md`.
+
+- 🔴 **build.zig test paths**: Replaced hardcoded macOS Homebrew paths with dynamic detection via `detectPqPaths()`/`detectMysqlPaths()`. Tests now work on Linux/CI.
+
+- **`ApplicationModules.register()`**: Now invalidates cached `sorted_order` to prevent stale topological sort after module set changes.
+
 ## [0.6.4] - 2026-04-19
 
 

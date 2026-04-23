@@ -112,8 +112,8 @@ test "generateJsonDocs" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    try modules.register(ModuleInfo.init("order", "Order module", &.{"inventory"}, undefined));
-    try modules.register(ModuleInfo.init("inventory", "Inventory module", &.{}, undefined));
+    try modules.register(ModuleInfo.init("order", "Order module", &.{"inventory"}));
+    try modules.register(ModuleInfo.init("inventory", "Inventory module", &.{}));
 
     const json = try generateJsonDocs(&modules, allocator);
     defer allocator.free(json);
@@ -128,7 +128,7 @@ test "generateMarkdownDocs" {
     var modules = ApplicationModules.init(allocator);
     defer modules.deinit();
 
-    try modules.register(ModuleInfo.init("user", "User module", &.{}, undefined));
+    try modules.register(ModuleInfo.init("user", "User module", &.{}));
 
     const md = try generateMarkdownDocs(&modules, allocator);
     defer allocator.free(md);

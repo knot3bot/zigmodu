@@ -5,21 +5,23 @@ pub const ModuleInfo = struct {
     name: []const u8,
     desc: []const u8,
     deps: []const []const u8,
-    ptr: *anyopaque,
-    init_fn: ?*const fn (*anyopaque) anyerror!void = null,
-    deinit_fn: ?*const fn (*anyopaque) void = null,
+    /// Module instance pointer. Null for metadata-only registrations (e.g. tests).
+    ptr: ?*anyopaque = null,
+    init_fn: ?*const fn (?*anyopaque) anyerror!void = null,
+    deinit_fn: ?*const fn (?*anyopaque) void = null,
 
+    /// Create a metadata-only ModuleInfo (ptr defaults to null).
+    /// Use scanModules() for full registrations with init/deinit function pointers.
     pub fn init(
         name: []const u8,
         desc: []const u8,
         deps: []const []const u8,
-        ptr: *anyopaque,
     ) ModuleInfo {
         return .{
             .name = name,
             .desc = desc,
             .deps = deps,
-            .ptr = ptr,
+            .ptr = null,
             .init_fn = null,
             .deinit_fn = null,
         };
@@ -41,6 +43,11 @@ pub const ApplicationModules = struct {
 
     pub fn register(self: *ApplicationModules, info: ModuleInfo) !void {
         try self.modules.put(info.name, info);
+        // Invalidate cached topological sort when module set changes
+        if (self.sorted_order) |*order| {
+            order.deinit(self.allocator);
+            self.sorted_order = null;
+        }
     }
 
     pub fn get(self: *ApplicationModules, name: []const u8) ?ModuleInfo {
@@ -60,11 +67,12 @@ pub const ApplicationModules = struct {
 };
 
 test "ModuleInfo init" {
-    const info = ModuleInfo.init("order", "Order module", &.{"inventory"}, undefined);
+    const info = ModuleInfo.init("order", "Order module", &.{"inventory"});
     try std.testing.expectEqualStrings("order", info.name);
     try std.testing.expectEqualStrings("Order module", info.desc);
     try std.testing.expectEqual(@as(usize, 1), info.deps.len);
     try std.testing.expectEqualStrings("inventory", info.deps[0]);
+    try std.testing.expect(info.ptr == null);
 }
 
 test "ApplicationModules register and get" {
@@ -72,7 +80,7 @@ test "ApplicationModules register and get" {
     var app = ApplicationModules.init(allocator);
     defer app.deinit();
 
-    const info = ModuleInfo.init("user", "User module", &.{}, undefined);
+    const info = ModuleInfo.init("user", "User module", &.{});
     try app.register(info);
 
     const retrieved = app.get("user").?;

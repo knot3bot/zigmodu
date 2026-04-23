@@ -9,7 +9,7 @@ pub fn scanModules(allocator: std.mem.Allocator, comptime modules: anytype) !App
         // Extract init function pointer if it exists
         const init_fn = if (@hasDecl(mod, "init"))
             struct {
-                fn wrapper(ptr: *anyopaque) anyerror!void {
+                fn wrapper(ptr: ?*anyopaque) anyerror!void {
                     _ = ptr;
                     try mod.init();
                 }
@@ -20,7 +20,7 @@ pub fn scanModules(allocator: std.mem.Allocator, comptime modules: anytype) !App
         // Extract deinit function pointer if it exists
         const deinit_fn = if (@hasDecl(mod, "deinit"))
             struct {
-                fn wrapper(ptr: *anyopaque) void {
+                fn wrapper(ptr: ?*anyopaque) void {
                     _ = ptr;
                     mod.deinit();
                 }

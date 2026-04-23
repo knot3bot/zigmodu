@@ -1,6 +1,7 @@
 //! Minimal circuit breaker adapter for sqlx (zigzero-compatible API)
 
 const std = @import("std");
+const Time = @import("../core/Time.zig");
 
 /// Simple circuit breaker compatible with zigzero sqlx expectations
 pub const CircuitBreaker = struct {
@@ -30,7 +31,7 @@ pub const CircuitBreaker = struct {
             .closed => return true,
             .half_open => return true,
             .open => {
-                const now = 0;
+                const now = Time.monotonicNowSeconds() * 1000; // convert to ms
                 if (now - self.last_failure_ms > @as(i64, @intCast(self.timeout_ms))) {
                     self.state = .half_open;
                     self.success_count = 0;
@@ -66,7 +67,7 @@ pub const CircuitBreaker = struct {
         defer self.mutex.unlock(self.io);
 
         self.failure_count += 1;
-        self.last_failure_ms = 0;
+        self.last_failure_ms = Time.monotonicNowSeconds() * 1000;
 
         switch (self.state) {
             .closed => {

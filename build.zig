@@ -151,19 +151,34 @@ pub fn build(b: *std.Build) void {
     // Test step - test the main library
     const test_step = b.step("test", "Run all tests");
 
-    // Workaround: Use zig test directly to avoid server-mode test runner issues in 0.16.0
-    const zig_test_cmd = b.addSystemCommand(&.{
+    // Build test arguments dynamically using detected library paths
+    var test_args = std.array_list.Managed([]const u8).init(b.allocator);
+    test_args.appendSlice(&.{
         "zig",
         "test",
         "src/root.zig",
         "-lpq",
         "-lsqlite3",
         "-lmysqlclient",
-        "-I/opt/homebrew/opt/libpq/include",
-        "-I/opt/homebrew/opt/mariadb-connector-c/include/mariadb",
-        "-L/opt/homebrew/opt/libpq/lib",
-        "-L/opt/homebrew/opt/mariadb-connector-c/lib",
-    });
+    }) catch @panic("OOM");
+
+    const pq_test = detectPqPaths(b, b.allocator);
+    if (pq_test.include) |inc| {
+        test_args.append(b.fmt("-I{s}", .{inc})) catch @panic("OOM");
+    }
+    if (pq_test.lib) |lib| {
+        test_args.append(b.fmt("-L{s}", .{lib})) catch @panic("OOM");
+    }
+
+    const mysql_test = detectMysqlPaths(b, b.allocator);
+    if (mysql_test.include) |inc| {
+        test_args.append(b.fmt("-I{s}", .{inc})) catch @panic("OOM");
+    }
+    if (mysql_test.lib) |lib| {
+        test_args.append(b.fmt("-L{s}", .{lib})) catch @panic("OOM");
+    }
+
+    const zig_test_cmd = b.addSystemCommand(test_args.items);
     test_step.dependOn(&zig_test_cmd.step);
 
     // Benchmark step

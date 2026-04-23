@@ -1,4 +1,5 @@
 const std = @import("std");
+const Time = @import("../core/Time.zig");
 const ManagedArrayList = std.array_list.Managed;
 
 /// 缓存管理器 - 支持多种淘汰策略
@@ -71,7 +72,7 @@ pub const CacheManager = struct {
         const value_copy = try self.allocator.dupe(u8, value);
         errdefer self.allocator.free(value_copy);
 
-        const now = 0;
+        const now = Time.monotonicNowSeconds();
 
         // 如果键已存在，更新它
         if (self.entries.getPtr(key)) |existing| {
@@ -109,7 +110,7 @@ pub const CacheManager = struct {
 
         // 检查TTL
         if (self.ttl_seconds > 0) {
-            const now = 0;
+            const now = Time.monotonicNowSeconds();
             if (@as(u64, @intCast(now - entry.created_at)) > self.ttl_seconds) {
                 // 条目已过期
                 _ = self.remove(key);
@@ -118,7 +119,7 @@ pub const CacheManager = struct {
         }
 
         // 更新访问信息
-        entry.last_accessed = 0;
+        entry.last_accessed = Time.monotonicNowSeconds();
         entry.access_count += 1;
 
         // 更新LRU顺序
@@ -225,14 +226,14 @@ pub const CacheManager = struct {
             if (self.entries.getPtr(key)) |entry| {
                 // 检查TTL
                 if (self.ttl_seconds > 0) {
-                    const now = 0;
+                    const now = Time.monotonicNowSeconds();
                     if (@as(u64, @intCast(now - entry.created_at)) > self.ttl_seconds) {
                         continue;
                     }
                 }
 
                 values[i] = entry.value;
-                entry.last_accessed = 0;
+                entry.last_accessed = Time.monotonicNowSeconds();
                 entry.access_count += 1;
                 found_count += 1;
             }

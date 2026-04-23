@@ -1,4 +1,5 @@
 const std = @import("std");
+const Time = @import("../core/Time.zig");
 
 /// 定时任务调度器
 pub const TaskScheduler = struct {
@@ -88,7 +89,7 @@ pub const TaskScheduler = struct {
             .schedule = .{ .interval = interval_seconds },
             .action = action,
             .last_run = 0,
-            .next_run = 0 + @as(i64, @intCast(interval_seconds)),
+            .next_run = Time.monotonicNowSeconds() + @as(i64, @intCast(interval_seconds)),
             .run_count = 0,
         });
 
@@ -143,7 +144,7 @@ pub const TaskScheduler = struct {
 
     /// 执行调度检查
     pub fn tick(self: *Self) !void {
-        const now = 0;
+        const now = Time.monotonicNowSeconds();
 
         for (self.tasks.items) |*task| {
             if (now >= task.next_run) {
@@ -175,7 +176,7 @@ pub const TaskScheduler = struct {
         _ = _self;
         _ = cron;
         // 简化实现：每小时执行
-        const now = 0;
+        const now = Time.monotonicNowSeconds();
         return now + 3600;
     }
 
@@ -254,7 +255,7 @@ test "TaskScheduler add and retrieve tasks" {
     defer scheduler.deinit();
 
     try scheduler.addIntervalTask("task1", 60, testAction);
-    try scheduler.addOneTimeTask("task2", 0 + 300, testAction);
+    try scheduler.addOneTimeTask("task2", Time.monotonicNowSeconds() + 300, testAction);
 
     try std.testing.expectEqual(@as(usize, 2), scheduler.getTasks().len);
 
@@ -269,7 +270,7 @@ test "TaskScheduler tick executes task" {
     defer scheduler.deinit();
 
     action_counter = 0;
-    const now = 0;
+    const now = Time.monotonicNowSeconds();
     try scheduler.addOneTimeTask("immediate", now - 1, testAction);
 
     try scheduler.tick();

@@ -9,6 +9,7 @@ pub const startAll = @import("core/Lifecycle.zig").startAll;
 pub const stopAll = @import("core/Lifecycle.zig").stopAll;
 pub const generateDocs = @import("core/Documentation.zig").generateDocs;
 pub const Documentation = @import("core/Documentation.zig");
+pub const time = @import("core/Time.zig");
 
 // Application
 pub const Application = @import("Application.zig").Application;

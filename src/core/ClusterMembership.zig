@@ -1,4 +1,5 @@
 const std = @import("std");
+const Time = @import("Time.zig");
 const DistributedEventBus = @import("DistributedEventBus.zig").DistributedEventBus;
 const ArrayList = std.array_list.Managed;
 
@@ -178,7 +179,7 @@ pub const ClusterMembership = struct {
     }
 
     fn checkNodeHealth(self: *Self) void {
-        const now = 0;
+        const now = Time.monotonicNowSeconds();
         const timeout_secs = @divFloor(self.node_timeout_ms, 1000);
 
         self.mutex.lock(self.io) catch return;
@@ -244,7 +245,7 @@ pub const ClusterMembership = struct {
 
         if (std.mem.eql(u8, event.node_id, self.node_id)) return;
 
-        const now = 0;
+        const now = Time.monotonicNowSeconds();
         const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 127, 0, 0, 1 }, .port = event.port } };
 
         if (self.nodes.getPtr(event.node_id)) |node| {

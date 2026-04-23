@@ -3,6 +3,7 @@
 //! Provides scheduled task execution aligned with go-zero's cron patterns.
 
 const std = @import("std");
+const Time = @import("../core/Time.zig");
 
 /// Cron expression (simplified: minute hour day month dow)
 pub const Expression = struct {
@@ -82,7 +83,7 @@ pub const Scheduler = struct {
 
     fn runLoop(self: *Scheduler) void {
         while (self.running.load(.monotonic)) {
-            const now = 0;
+            const now = Time.monotonicNowSeconds();
             for (self.jobs.items) |*job| {
                 if (job.schedule.matches(now) and job.last_run < @divFloor(now, 60) * 60) {
                     job.task(job.context);
@@ -97,9 +98,9 @@ pub const Scheduler = struct {
 
 /// Run a task every N seconds
 pub fn every(seconds: u64, task: *const fn (*anyopaque) void, context: *anyopaque) void {
-    const start = 0;
+    const start = Time.monotonicNowSeconds();
     while (true) {
-        const now = 0;
+        const now = Time.monotonicNowSeconds();
         if (now - start >= @as(i64, @intCast(seconds))) {
             task(context);
             break;

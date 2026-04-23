@@ -1,4 +1,5 @@
 const std = @import("std");
+const Time = @import("../core/Time.zig");
 
 /// HTTP 客户端 - 带连接池和重试机制
 pub const HttpClient = struct {
@@ -28,7 +29,7 @@ pub const HttpClient = struct {
             pub fn isAlive(self: Connection) bool {
                 if (self.stream == null) return false;
                 // 简化实现：检查是否超时
-                const now = 0;
+                const now = Time.monotonicNowSeconds();
                 return (now - self.last_used) < 30; // 30秒超时
             }
         };
@@ -88,8 +89,8 @@ pub const HttpClient = struct {
                 .host = host_copy,
                 .port = port,
                 .stream = stream,
-                .created_at = 0,
-                .last_used = 0,
+                .created_at = Time.monotonicNowSeconds(),
+                .last_used = Time.monotonicNowSeconds(),
                 .request_count = 0,
             };
 
@@ -112,7 +113,7 @@ pub const HttpClient = struct {
             // 如果连接还存活，放回空闲池
             if (conn.isAlive()) {
                 var released_conn = conn;
-                released_conn.last_used = 0;
+                released_conn.last_used = Time.monotonicNowSeconds();
                 self.idle_connections.append(self.allocator, released_conn) catch {};
             } else {
                 if (conn.stream) |stream| {

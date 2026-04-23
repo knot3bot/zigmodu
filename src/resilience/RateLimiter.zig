@@ -1,4 +1,5 @@
 const std = @import("std");
+const Time = @import("../core/Time.zig");
 
 /// 限流器 - 令牌桶算法
 pub const RateLimiter = struct {
@@ -18,7 +19,7 @@ pub const RateLimiter = struct {
             .max_tokens = max_tokens,
             .refill_rate = refill_rate,
             .current_tokens = @as(f64, @floatFromInt(max_tokens)),
-            .last_refill_time = 0,
+            .last_refill_time = Time.monotonicNowSeconds(),
         };
     }
 
@@ -63,7 +64,7 @@ pub const RateLimiter = struct {
 
     /// 补充令牌
     fn refill(self: *Self) void {
-        const now = 0;
+        const now = Time.monotonicNowSeconds();
         const elapsed = now - self.last_refill_time;
 
         if (elapsed > 0) {
@@ -82,7 +83,7 @@ pub const RateLimiter = struct {
     /// 重置限流器
     pub fn reset(self: *Self) void {
         self.current_tokens = @as(f64, @floatFromInt(self.max_tokens));
-        self.last_refill_time = 0;
+        self.last_refill_time = Time.monotonicNowSeconds();
     }
 
     /// 获取限流器统计
@@ -179,8 +180,7 @@ pub const RateLimiterRegistry = struct {
         var iter = self.limiters.iterator();
         while (iter.next()) |entry| {
             const name = entry.key_ptr.*;
-            const limiter = entry.value_ptr.*;
-            const stats = limiter.getStats();
+            const stats = @constCast(entry.value_ptr).getStats();
 
             try writer.print("{s}:\n", .{name});
             try writer.print("  Max Tokens: {d}\n", .{stats.max_tokens});
@@ -223,7 +223,7 @@ pub const SlidingWindowRateLimiter = struct {
         self.cleanupOldRequests();
 
         if (self.requests.items.len < self.max_requests) {
-            self.requests.append(0) catch return false;
+            self.requests.append(Time.monotonicNowSeconds()) catch return false;
             return true;
         }
 
@@ -232,7 +232,7 @@ pub const SlidingWindowRateLimiter = struct {
 
     /// 清理过期的请求记录
     fn cleanupOldRequests(self: *Self) void {
-        const now = 0;
+        const now = Time.monotonicNowSeconds();
         const cutoff = now - @as(i64, @intCast(self.window_size_seconds));
 
         var i: usize = 0;
