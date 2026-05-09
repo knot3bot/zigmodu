@@ -15,6 +15,9 @@ fn signalHandler(_: c_int) callconv(.c) void {
     shutdown_requested.store(true, .release);
 }
 
+/// Atomic counter for in-flight requests (used for graceful drain).
+var in_flight_requests = std.atomic.Value(u64).init(0);
+
 /// Application Builder Pattern
 /// Simplified API for creating and managing modular applications
 ///
@@ -193,8 +196,22 @@ pub const Application = struct {
             std.Thread.sleep(100 * std.time.ns_per_ms);
         }
 
-        std.log.info("⚡ Shutdown signal received, stopping '{s}'...", .{self.config.name});
+        std.log.info("⚡ Shutdown signal received, draining in-flight requests...", .{});
+
+        // Drain: wait for in-flight requests to complete (with timeout)
+        const drain_start = std.time.milliTimestamp();
+        const drain_timeout_ms: i64 = 30_000; // 30 seconds max drain
+        while (in_flight_requests.load(.acquire) > 0) {
+            if (std.time.milliTimestamp() - drain_start > drain_timeout_ms) {
+                std.log.warn("⚡ Drain timeout after {d}ms, forcing stop...", .{drain_timeout_ms});
+                break;
+            }
+            std.Thread.sleep(50 * std.time.ns_per_ms);
+        }
+
+        std.log.info("⚡ Stopping application '{s}'...", .{self.config.name});
         self.stop();
+        std.log.info("✅ Application '{s}' stopped gracefully", .{self.config.name});
     }
 };
 

@@ -703,6 +703,20 @@ const Router = struct {
         return root;
     }
 
+    /// 遍历 trie 树，收集所有已注册路由的 (method, path) 信息
+    pub fn listRoutes(self: *const Router, alloc: std.mem.Allocator) ![]const RouteInfo {
+        var result = std.ArrayList(RouteInfo).empty;
+
+        var method_iter = self.roots.iterator();
+        while (method_iter.next()) |entry| {
+            const method = entry.key_ptr.*;
+            const root = entry.value_ptr.*;
+            try collectRoutes(root, method, "", alloc, &result);
+        }
+
+        return result.toOwnedSlice(alloc);
+    }
+
     pub fn match(self: *const Router, method: Method, path: []const u8) ?MatchedRoute {
         const root = self.roots.get(method) orelse return null;
 
@@ -753,6 +767,36 @@ const Router = struct {
         return null;
     }
 };
+
+/// Lightweight route metadata for listing (no handler pointer)
+pub const RouteInfo = struct {
+    method: []const u8,
+    path: []const u8,
+};
+
+/// Recursively traverse trie nodes to collect all route paths
+fn collectRoutes(
+    node: *const TrieNode,
+    method: Method,
+    prefix: []const u8,
+    alloc: std.mem.Allocator,
+    result: *std.ArrayList(RouteInfo),
+) !void {
+    if (node.route) |_| {
+        const path = try std.fmt.allocPrint(alloc, "/{s}", .{prefix});
+        defer alloc.free(path);
+        try result.append(alloc, .{
+            .method = try alloc.dupe(u8, method.toString()),
+            .path = try alloc.dupe(u8, path),
+        });
+    }
+    for (node.children.items) |child| {
+        const sep = if (prefix.len > 0 and prefix[prefix.len - 1] != '/') "/" else "";
+        const full = try std.fmt.allocPrint(alloc, "{s}{s}{s}", .{ prefix, sep, child.segment });
+        defer alloc.free(full);
+        try collectRoutes(child, method, full, alloc, result);
+    }
+}
 
 const MatchedRoute = struct {
     route: Route,
@@ -855,6 +899,11 @@ pub const Server = struct {
 
     pub fn group(self: *Server, prefix: []const u8) RouteGroup {
         return RouteGroup.init(self, prefix);
+    }
+
+    /// List all registered routes (method + path pairs)
+    pub fn listRoutes(self: *const Server, alloc: std.mem.Allocator) ![]const RouteInfo {
+        return self.router.listRoutes(alloc);
     }
 
     pub fn addMiddleware(self: *Server, mw: Middleware) !void {
@@ -1353,6 +1402,44 @@ test "integration: router + handler + response" {
         try std.testing.expect(ctx.responded);
         try std.testing.expect(std.mem.indexOf(u8, ctx.response_body.items, "found") != null);
     }
+}
+
+test "router listRoutes" {
+    const allocator = std.testing.allocator;
+    var router = Router.init(allocator);
+    defer router.deinit();
+
+    try router.addRoute(.{ .method = .GET, .path = "/health", .handler = struct { fn handle(_: *Context) !void {} }.handle });
+    try router.addRoute(.{ .method = .POST, .path = "/users", .handler = struct { fn handle(_: *Context) !void {} }.handle });
+    try router.addRoute(.{ .method = .GET, .path = "/users/{id}", .handler = struct { fn handle(_: *Context) !void {} }.handle });
+    try router.addRoute(.{ .method = .DELETE, .path = "/api/v1/admin/settings", .handler = struct { fn handle(_: *Context) !void {} }.handle });
+
+    const routes = try router.listRoutes(allocator);
+    defer {
+        for (routes) |r| {
+            allocator.free(r.method);
+            allocator.free(r.path);
+        }
+        allocator.free(routes);
+    }
+
+    try std.testing.expectEqual(@as(usize, 4), routes.len);
+
+    // Verify method/path pairs exist (order not guaranteed)
+    var found_health = false;
+    var found_post_users = false;
+    var found_get_users_id = false;
+    var found_admin = false;
+    for (routes) |r| {
+        if (std.mem.eql(u8, r.method, "GET") and std.mem.eql(u8, r.path, "/health")) found_health = true;
+        if (std.mem.eql(u8, r.method, "POST") and std.mem.eql(u8, r.path, "/users")) found_post_users = true;
+        if (std.mem.eql(u8, r.method, "GET") and std.mem.eql(u8, r.path, "/users/{id}")) found_get_users_id = true;
+        if (std.mem.eql(u8, r.method, "DELETE") and std.mem.eql(u8, r.path, "/api/v1/admin/settings")) found_admin = true;
+    }
+    try std.testing.expect(found_health);
+    try std.testing.expect(found_post_users);
+    try std.testing.expect(found_get_users_id);
+    try std.testing.expect(found_admin);
 }
 
 test "integration: router + global middleware + handler" {

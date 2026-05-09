@@ -1,0 +1,247 @@
+const std = @import("std");
+const Time = @import("../core/Time.zig");
+
+/// Bulkhead 模式 — 信号量隔离并发限制
+///
+/// 将资源按组隔离，防止某个下游服务的故障耗尽所有资源
+/// 类似 Resilience4j Bulkhead / Hystrix Thread Pool Isolation
+///
+/// 用法:
+///   var bulkhead = Bulkhead.init(allocator, "db-pool", 10, 5);
+///   try bulkhead.acquire();
+///   defer bulkhead.release();
+///   // ... 受保护的操作 ...
+///
+/// 信号量容量语义:
+///   max_concurrent: 最大并发数
+///   max_queue:      等待队列长度 (0 = 无队列，直接拒绝)
+pub const Bulkhead = struct {
+    const Self = @This();
+
+    allocator: std.mem.Allocator,
+    name: []const u8,
+    /// 当前活跃调用数
+    active_calls: u32,
+    /// 最大并发数
+    max_concurrent: u32,
+    /// 最大等待队列
+    max_queue: u32,
+    /// 当前等待数
+    waiting: u32,
+    /// 统计
+    stats: BulkheadStats,
+
+    pub const BulkheadStats = struct {
+        total_acquired: u64 = 0,
+        total_rejected: u64 = 0,
+        total_released: u64 = 0,
+        peak_concurrent: u32 = 0,
+        created_at: i64 = 0,
+    };
+
+    pub fn init(allocator: std.mem.Allocator, name: []const u8, max_concurrent: u32, max_queue: u32) !Self {
+        const name_copy = try allocator.dupe(u8, name);
+        errdefer allocator.free(name_copy);
+
+        return .{
+            .allocator = allocator,
+            .name = name_copy,
+            .active_calls = 0,
+            .max_concurrent = max_concurrent,
+            .max_queue = max_queue,
+            .waiting = 0,
+            .stats = .{ .created_at = Time.monotonicNowSeconds() },
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.allocator.free(self.name);
+    }
+
+    /// 尝试获取信号量
+    /// 成功返回 true，繁忙返回 false
+    pub fn tryAcquire(self: *Self) bool {
+        if (self.active_calls < self.max_concurrent) {
+            self.active_calls += 1;
+            self.stats.total_acquired += 1;
+            if (self.active_calls > self.stats.peak_concurrent) {
+                self.stats.peak_concurrent = self.active_calls;
+            }
+            return true;
+        }
+
+        // 检查是否可排队
+        if (self.max_queue > 0 and self.waiting < self.max_queue) {
+            self.waiting += 1;
+            // 自旋等待 (简化: 实际应使用条件变量)
+            while (self.active_calls >= self.max_concurrent) {
+                // yield
+                std.atomic.spinLoopHint();
+            }
+            self.waiting -= 1;
+            self.active_calls += 1;
+            self.stats.total_acquired += 1;
+            if (self.active_calls > self.stats.peak_concurrent) {
+                self.stats.peak_concurrent = self.active_calls;
+            }
+            return true;
+        }
+
+        self.stats.total_rejected += 1;
+        return false;
+    }
+
+    /// 获取信号量 (阻塞直到可用)
+    pub fn acquire(self: *Self) void {
+        while (!self.tryAcquire()) {
+            std.atomic.spinLoopHint();
+        }
+    }
+
+    /// 释放信号量
+    pub fn release(self: *Self) void {
+        if (self.active_calls > 0) {
+            self.active_calls -= 1;
+            self.stats.total_released += 1;
+        }
+    }
+
+    /// 获取当前活跃数
+    pub fn getActiveCount(self: *Self) u32 {
+        return self.active_calls;
+    }
+
+    /// 获取最大并发数
+    pub fn getMaxConcurrent(self: *Self) u32 {
+        return self.max_concurrent;
+    }
+
+    /// 获取当前等待数
+    pub fn getWaitingCount(self: *Self) u32 {
+        return self.waiting;
+    }
+
+    /// 获取统计信息
+    pub fn getStats(self: *Self) BulkheadStats {
+        return self.stats;
+    }
+
+    /// 检查是否已满
+    pub fn isFull(self: *Self) bool {
+        return self.active_calls >= self.max_concurrent;
+    }
+
+    /// 获取当前利用率 (0.0-1.0)
+    pub fn getUtilization(self: *Self) f64 {
+        if (self.max_concurrent == 0) return 0;
+        return @as(f64, @floatFromInt(self.active_calls)) / @as(f64, @floatFromInt(self.max_concurrent));
+    }
+};
+
+/// BulkheadRegistry — 管理多个 Bulkhead 实例
+pub const BulkheadRegistry = struct {
+    const Self = @This();
+
+    allocator: std.mem.Allocator,
+    bulkheads: std.StringHashMap(*Bulkhead),
+
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return .{
+            .allocator = allocator,
+            .bulkheads = std.StringHashMap(*Bulkhead).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        var iter = self.bulkheads.iterator();
+        while (iter.next()) |entry| {
+            self.allocator.free(entry.value_ptr.*.name);
+            self.allocator.destroy(entry.value_ptr.*);
+        }
+        self.bulkheads.deinit();
+    }
+
+    pub fn getOrCreate(self: *Self, name: []const u8, max_concurrent: u32, max_queue: u32) !*Bulkhead {
+        if (self.bulkheads.get(name)) |bh| return bh;
+
+        const bh = try self.allocator.create(Bulkhead);
+        bh.* = try Bulkhead.init(self.allocator, name, max_concurrent, max_queue);
+        try self.bulkheads.put(bh.name, bh);
+        return bh;
+    }
+
+    pub fn get(self: *Self, name: []const u8) ?*Bulkhead {
+        return self.bulkheads.get(name);
+    }
+};
+
+// ─────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────
+
+test "Bulkhead basic acquire release" {
+    const allocator = std.testing.allocator;
+    var bh = try Bulkhead.init(allocator, "test", 5, 0);
+    defer bh.deinit();
+
+    try std.testing.expect(bh.tryAcquire());
+    try std.testing.expectEqual(@as(u32, 1), bh.getActiveCount());
+
+    bh.release();
+    try std.testing.expectEqual(@as(u32, 0), bh.getActiveCount());
+}
+
+test "Bulkhead max concurrent enforcement" {
+    const allocator = std.testing.allocator;
+    var bh = try Bulkhead.init(allocator, "test", 2, 0);
+    defer bh.deinit();
+
+    try std.testing.expect(bh.tryAcquire());
+    try std.testing.expect(bh.tryAcquire());
+    // 第三个应该失败
+    try std.testing.expect(!bh.tryAcquire());
+
+    try std.testing.expect(bh.isFull());
+}
+
+test "Bulkhead stats" {
+    const allocator = std.testing.allocator;
+    var bh = try Bulkhead.init(allocator, "stats-test", 2, 0);
+    defer bh.deinit();
+
+    try std.testing.expect(bh.tryAcquire());
+    try std.testing.expect(bh.tryAcquire());
+    try std.testing.expect(!bh.tryAcquire()); // rejected
+
+    const stats = bh.getStats();
+    try std.testing.expectEqual(@as(u64, 2), stats.total_acquired);
+    try std.testing.expectEqual(@as(u64, 1), stats.total_rejected);
+    try std.testing.expectEqual(@as(u32, 2), stats.peak_concurrent);
+}
+
+test "Bulkhead utilization" {
+    const allocator = std.testing.allocator;
+    var bh = try Bulkhead.init(allocator, "util", 10, 0);
+    defer bh.deinit();
+
+    try std.testing.expect(bh.tryAcquire());
+    try std.testing.expect(bh.tryAcquire());
+
+    const util = bh.getUtilization();
+    try std.testing.expect(util > 0.19 and util < 0.21); // ~20%
+}
+
+test "BulkheadRegistry get or create" {
+    const allocator = std.testing.allocator;
+    var registry = BulkheadRegistry.init(allocator);
+    defer registry.deinit();
+
+    const bh1 = try registry.getOrCreate("db", 10, 5);
+    const bh2 = try registry.getOrCreate("db", 10, 5);
+
+    // 应该返回同一个实例
+    try std.testing.expect(bh1 == bh2);
+
+    try std.testing.expect(bh1.tryAcquire());
+    try std.testing.expectEqual(@as(u32, 1), bh1.getActiveCount());
+}

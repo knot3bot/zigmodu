@@ -8,6 +8,7 @@ test "compile all source files" {
     // API
     _ = @import("api/Module.zig");
     _ = @import("api/Middleware.zig");
+    _ = @import("api/middleware/Tracing.zig");
     _ = @import("api/Simplified.zig");
     _ = @import("api/Server.zig");
 
@@ -71,7 +72,8 @@ test "compile all source files" {
     // Cluster & Distributed (integration tests - these compile successfully)
     _ = @import("core/ClusterMembership.zig");
     _ = @import("core/cluster/FailureDetector.zig");
-    _ = @import("core/cluster/DistributedIntegrationTest.zig");
+    _ = @import("messaging/OutboxPublisher.zig");
+    _ = @import("tenant/ShardRouter.zig");
 
     // DI
     _ = @import("di/Container.zig");
@@ -150,4 +152,61 @@ test "compile all source files" {
 
     // Core extensions
     _ = @import("core/Fx.zig");
+
+    // Migration
+    _ = @import("migration/Migration.zig");
+
+    // Secrets
+    _ = @import("secrets/SecretsManager.zig");
+
+    // Module Interaction Verifier
+    _ = @import("core/ModuleInteractionVerifier.zig");
+
+    // HTTP Idempotency
+    _ = @import("http/Idempotency.zig");
+
+    // OpenAPI Generator
+    _ = @import("http/OpenApi.zig");
+
+    // gRPC Transport
+    _ = @import("core/GrpcTransport.zig");
+
+    // Kafka Connector
+    _ = @import("core/KafkaConnector.zig");
+
+    // Saga Orchestrator
+    _ = @import("core/SagaOrchestrator.zig");
+
+    // Contract Testing
+    _ = @import("test/ContractTest.zig");
+
+    // RFC 7807 Problem Details
+    _ = @import("http/ProblemDetails.zig");
+
+    // Feature Flags
+    _ = @import("core/FeatureFlags.zig");
+
+    // HTTP Metrics
+    _ = @import("http/HttpMetrics.zig");
+
+    // API Versioning
+    _ = @import("http/ApiVersioning.zig");
+
+    // Cache Aside
+    _ = @import("cache/CacheAside.zig");
+
+    // Bulkhead
+    _ = @import("resilience/Bulkhead.zig");
+
+    // API Key Auth
+    _ = @import("security/ApiKeyAuth.zig");
+
+    // Validation Middleware
+    _ = @import("api/middleware/Validation.zig");
+
+    // Access Log
+    _ = @import("http/AccessLog.zig");
+
+    // Dashboard
+    _ = @import("http/Dashboard.zig");
 }

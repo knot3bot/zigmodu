@@ -14,7 +14,9 @@ pub const api = @import("api/Module.zig");
 
 // HTTP Server
 pub const http_server = @import("api/Server.zig");
+pub const RouteInfo = @import("api/Server.zig").RouteInfo;
 pub const http_middleware = @import("api/Middleware.zig");
+pub const tracing_middleware = @import("api/middleware/Tracing.zig");
 
 // Error Handling
 pub const ZigModuError = @import("core/Error.zig").ZigModuError;
@@ -71,13 +73,24 @@ pub const Benchmark = @import("test/Benchmark.zig").Benchmark;
 pub const TestDataGenerator = @import("test/IntegrationTest.zig").TestDataGenerator;
 pub const BenchmarkSuite = @import("test/Benchmark.zig").BenchmarkSuite;
 
-// Security
-pub const SecurityModule = @import("security/SecurityModule.zig").SecurityModule;
+// Tenant
+pub const TenantContext = @import("tenant/TenantContext.zig").TenantContext;
+pub const TenantInterceptor = @import("tenant/TenantInterceptor.zig").TenantInterceptor;
+pub const DataPermissionContext = @import("datapermission/DataPermission.zig").DataPermissionContext;
+pub const DataPermissionFilter = @import("datapermission/DataPermission.zig").DataPermissionFilter;
 pub const Rbac = @import("security/Rbac.zig");
 pub const PasswordEncoder = @import("security/PasswordEncoder.zig").PasswordEncoder;
-pub const tenant = @import("tenant/TenantContext.zig");
+// Messaging
+pub const OutboxPublisher = @import("messaging/OutboxPublisher.zig").OutboxPublisher;
+pub const OutboxPoller = @import("messaging/OutboxPublisher.zig").OutboxPoller;
+pub const OutboxEntry = @import("messaging/OutboxPublisher.zig").OutboxEntry;
+pub const OutboxConfig = @import("messaging/OutboxPublisher.zig").OutboxConfig;
+
+// Sharding
+pub const ShardRouter = @import("tenant/ShardRouter.zig").ShardRouter;
+pub const ShardPool = @import("tenant/ShardRouter.zig").ShardPool;
+pub const ShardConfig = @import("tenant/ShardRouter.zig").ShardConfig;
 pub const datapermission = @import("datapermission/DataPermission.zig");
-pub const TenantInterceptor = @import("tenant/TenantInterceptor.zig").TenantInterceptor;
 pub const auth = @import("security/AuthMiddleware.zig");
 pub const SecurityScanner = @import("security/SecurityScanner.zig").SecurityScanner;
 pub const DependencyScanner = @import("security/SecurityScanner.zig").DependencyScanner;
@@ -123,6 +136,96 @@ pub const ModuleSnapshot = @import("core/HotReloader.zig").ModuleSnapshot;
 
 // Cluster Membership
 pub const ClusterMembership = @import("core/ClusterMembership.zig").ClusterMembership;
+
+// Database Migrations (Flyway-style)
+pub const MigrationRunner = @import("migration/Migration.zig").MigrationRunner;
+pub const MigrationLoader = @import("migration/Migration.zig").MigrationLoader;
+pub const MigrationEntry = @import("migration/Migration.zig").MigrationEntry;
+pub const MigrationStatus = @import("migration/Migration.zig").MigrationStatus;
+pub const AppliedMigration = @import("migration/Migration.zig").AppliedMigration;
+
+// Module Interaction Verification
+pub const ModuleInteractionVerifier = @import("core/ModuleInteractionVerifier.zig").ModuleInteractionVerifier;
+pub const InteractionType = @import("core/ModuleInteractionVerifier.zig").ModuleInteractionVerifier.InteractionType;
+
+// Idempotency
+pub const IdempotencyStore = @import("http/Idempotency.zig").IdempotencyStore;
+pub const idempotencyMiddleware = @import("http/Idempotency.zig").idempotencyMiddleware;
+
+// OpenAPI Documentation
+pub const OpenApiGenerator = @import("http/OpenApi.zig").OpenApiGenerator;
+
+// RFC 7807 Problem Details
+pub const ProblemDetails = @import("http/ProblemDetails.zig").ProblemDetails;
+pub const ValidationProblem = @import("http/ProblemDetails.zig").ValidationProblem;
+
+// Feature Flags
+pub const FeatureFlagManager = @import("core/FeatureFlags.zig").FeatureFlagManager;
+pub const FeatureFlag = @import("core/FeatureFlags.zig").FeatureFlag;
+
+// HTTP Metrics
+pub const HttpMetricsCollector = @import("http/HttpMetrics.zig").HttpMetricsCollector;
+pub const httpMetricsMiddleware = @import("http/HttpMetrics.zig").httpMetricsMiddleware;
+
+// Cache-Aside Pattern
+pub const CacheAside = @import("cache/CacheAside.zig").CacheAside;
+
+// Bulkhead Pattern
+pub const Bulkhead = @import("resilience/Bulkhead.zig").Bulkhead;
+pub const BulkheadRegistry = @import("resilience/Bulkhead.zig").BulkheadRegistry;
+
+// API Key Authentication
+pub const ApiKeyAuth = @import("security/ApiKeyAuth.zig").apiKeyAuth;
+pub const ApiKeyAuthWithLoader = @import("security/ApiKeyAuth.zig").apiKeyAuthWithLoader;
+pub const ApiKeyGenerator = @import("security/ApiKeyAuth.zig").ApiKeyGenerator;
+pub const ApiKeyConfig = @import("security/ApiKeyAuth.zig").ApiKeyConfig;
+
+// Validation Middleware
+pub const validateRequest = @import("api/middleware/Validation.zig").validateRequest;
+pub const validationMiddleware = @import("api/middleware/Validation.zig").validationMiddleware;
+
+// Dashboard
+pub const Dashboard = @import("http/Dashboard.zig");
+
+// Access Logging
+pub const AccessLogger = @import("http/AccessLog.zig").AccessLogger;
+pub const accessLogMiddleware = @import("http/AccessLog.zig").accessLogMiddleware;
+
+// API Versioning
+pub const ApiVersion = @import("http/ApiVersioning.zig").ApiVersion;
+pub const ApiVersionExtractor = @import("http/ApiVersioning.zig").ApiVersionExtractor;
+pub const ApiVersionRouter = @import("http/ApiVersioning.zig").ApiVersionRouter;
+pub const apiVersionMiddleware = @import("http/ApiVersioning.zig").apiVersionMiddleware;
+pub const ApiEndpoint = @import("http/OpenApi.zig").ApiEndpoint;
+pub const ApiSchema = @import("http/OpenApi.zig").ApiSchema;
+pub const HttpMethod = @import("http/OpenApi.zig").HttpMethod;
+
+// Secrets Management
+pub const SecretsManager = @import("secrets/SecretsManager.zig").SecretsManager;
+pub const SecretEntry = @import("secrets/SecretsManager.zig").SecretsManager.SecretEntry;
+pub const SecretsSourcePriority = @import("secrets/SecretsManager.zig").SecretsSourcePriority;
+
+// gRPC Transport
+pub const GrpcServiceRegistry = @import("core/GrpcTransport.zig").GrpcServiceRegistry;
+pub const GrpcClient = @import("core/GrpcTransport.zig").GrpcClient;
+pub const GrpcStatusCode = @import("core/GrpcTransport.zig").GrpcStatusCode;
+pub const ProtoParser = @import("core/GrpcTransport.zig").ProtoParser;
+
+// Kafka Connector
+pub const KafkaProducer = @import("core/KafkaConnector.zig").KafkaProducer;
+pub const KafkaConsumer = @import("core/KafkaConnector.zig").KafkaConsumer;
+pub const KafkaEventBridge = @import("core/KafkaConnector.zig").KafkaEventBridge;
+pub const KafkaMessage = @import("core/KafkaConnector.zig").KafkaMessage;
+
+// Saga Orchestrator (auto-compensation)
+pub const SagaOrchestrator = @import("core/SagaOrchestrator.zig").SagaOrchestrator;
+pub const SagaLog = @import("core/SagaOrchestrator.zig").SagaLog;
+pub const SagaStatus = @import("core/SagaOrchestrator.zig").SagaStatus;
+
+// Contract Testing
+pub const ContractTestRunner = @import("test/ContractTest.zig").ContractTestRunner;
+pub const Contract = @import("test/ContractTest.zig").Contract;
+pub const ContractVerificationResult = @import("test/ContractTest.zig").ContractVerificationResult;
 
 // Distributed Transactions
 pub const DistributedTransactionManager = @import("core/DistributedTransaction.zig").DistributedTransactionManager;

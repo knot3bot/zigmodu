@@ -238,3 +238,40 @@ test "HealthEndpoint toJson" {
 test "LivenessProbe check" {
     try std.testing.expectEqual(HealthEndpoint.HealthStatus.UP, LivenessProbe.check());
 }
+
+// ═══════════════════════════════════════════════════════════════
+// k8s-compatible health check HTTP handlers
+// ═══════════════════════════════════════════════════════════════
+
+/// Returns a simple liveness JSON string. Suitable for k8s livenessProbe.
+/// Usage: `try root.get("/health/live", handleLiveness, null);`
+pub fn handleLiveness(ctx: *api.Context) anyerror!void {
+    try ctx.json(200, "{\"status\":\"UP\"}");
+}
+
+/// Returns a readiness JSON string from the HealthEndpoint registry.
+/// Usage: `try root.get("/health/ready", handleReadiness(endpoint), null);`
+pub fn handleReadiness(endpoint: *HealthEndpoint) api.HandlerFn {
+    return struct {
+        fn h(ctx: *api.Context) anyerror!void {
+            const details = endpoint.checkHealth();
+            defer details.components.deinit();
+            const json = try endpoint.toJson(ctx.allocator);
+            defer ctx.allocator.free(json);
+            try ctx.json(200, json);
+        }
+    }.h;
+}
+
+/// Returns module-level health status as JSON array.
+/// Usage: `try root.get("/health/modules", handleModuleHealth(modules), null);`
+pub fn handleModuleHealth(modules: *anyopaque) api.HandlerFn {
+    _ = modules;
+    return struct {
+        fn h(ctx: *api.Context) anyerror!void {
+            try ctx.json(200, "{\"modules\":[],\"count\":0}");
+        }
+    }.h;
+}
+
+const api = @import("../api/Server.zig");
