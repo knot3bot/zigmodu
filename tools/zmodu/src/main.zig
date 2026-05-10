@@ -11,6 +11,9 @@ const Command = enum {
     generate,
     scaffold,
     bigdemo,
+    migration,
+    health,
+    config,
     help,
     version,
 };
@@ -201,6 +204,9 @@ fn runCommand(io: std.Io, allocator: std.mem.Allocator, command: Command, cmd_ar
         .generate => try cmdGenerate(io, allocator, cmd_args),
         .scaffold => try cmdScaffold(io, allocator, cmd_args),
         .bigdemo => try cmdBigdemo(io, allocator, cmd_args),
+        .migration => try cmdMigration(io, allocator, cmd_args),
+        .health => try cmdHealth(io, allocator, cmd_args),
+        .config => try cmdConfig(io, allocator, cmd_args),
         .help => {
             if (cmd_args.len != 0) {
                 std.log.err("`zmodu help` does not accept arguments (got {d}).", .{cmd_args.len});
@@ -300,6 +306,10 @@ fn parseCommand(cmd: []const u8) ?Command {
     if (std.mem.eql(u8, cmd, "generate")) return .generate;
     if (std.mem.eql(u8, cmd, "scaffold")) return .scaffold;
     if (std.mem.eql(u8, cmd, "bigdemo")) return .bigdemo;
+    if (std.mem.eql(u8, cmd, "migration")) return .migration;
+    if (std.mem.eql(u8, cmd, "migrate")) return .migration;
+    if (std.mem.eql(u8, cmd, "health")) return .health;
+    if (std.mem.eql(u8, cmd, "config")) return .config;
     if (std.mem.eql(u8, cmd, "help")) return .help;
     if (std.mem.eql(u8, cmd, "version")) return .version;
     if (std.mem.eql(u8, cmd, "--help")) return .help;
@@ -324,6 +334,9 @@ fn printUsage() void {
         \\  orm             Generate ORM modules from SQL (auto-groups by prefix)
         \\  scaffold        One-shot: SQL -> full project with wiring
         \\  bigdemo         Regenerate shopdemo (152 tables → 42 modules)
+        \\  migration <n>   Generate Flyway-style migration file (V{timestamp}__{name}.sql)
+        \\  health          Generate health check endpoint boilerplate
+        \\  config          Generate ExternalizedConfig validator boilerplate
         \\  generate <t>   Alias: generate module|event|api|orm [...]
         \\  help            Show help
         \\  version         Show version
@@ -338,6 +351,10 @@ fn printUsage() void {
         \\  zmodu orm --sql schema.sql --out src/modules --module <name> --force
         \\  zmodu scaffold --sql schema.sql --name myapp
         \\  zmodu scaffold --sql schema.sql --name myapp --out ./myproject
+        \\  zmodu migration add-users-table
+        \\  zmodu migration add-index --dir src/migrations
+        \\  zmodu health --out src/modules/app
+        \\  zmodu config --keys DB_HOST,DB_PORT,DB_NAME
         \\
         \\Flags (where supported):
         \\  --dry-run   Preview writes / mkdir; no files created
@@ -351,7 +368,7 @@ fn printUsage() void {
 }
 
 fn printVersion() void {
-    std.log.info("zmodu version 0.5.5", .{});
+    std.log.info("zmodu version 0.6.0", .{});
 }
 
 fn cmdNew(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
@@ -1876,7 +1893,7 @@ fn writeModuleFilesZent(io: std.Io, allocator: std.mem.Allocator, out_dir: []con
 
 fn cmdGenerate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        std.log.err("Usage: zmodu generate <module|event|api|orm> [options]", .{});
+        std.log.err("Usage: zmodu generate <module|event|api|orm|migration|health|config> [options]", .{});
         return error.CliUsage;
     }
 
@@ -1896,6 +1913,12 @@ fn cmdGenerate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u
         try cmdApi(io, allocator, args[1..]);
     } else if (std.mem.eql(u8, sub, "orm")) {
         try cmdOrm(io, allocator, args[1..]);
+    } else if (std.mem.eql(u8, sub, "migration")) {
+        try cmdMigration(io, allocator, args[1..]);
+    } else if (std.mem.eql(u8, sub, "health")) {
+        try cmdHealth(io, allocator, args[1..]);
+    } else if (std.mem.eql(u8, sub, "config")) {
+        try cmdConfig(io, allocator, args[1..]);
     } else {
         std.log.err("Unknown generate target: {s}", .{sub});
         return error.CliUsage;
@@ -2026,6 +2049,276 @@ fn cmdOrm(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !v
         module_count += 1;
     }
     std.log.info("Auto-grouped {d} table(s) into {d} module(s)", .{ tables.len, module_count });
+}
+
+// ── migration: generate Flyway-style migration file ─────────────────
+
+fn cmdMigration(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (args.len == 0) {
+        std.log.err("usage: zmodu migration <description> [--dir <dir>]", .{});
+        return error.CliUsage;
+    }
+
+    var description: []const u8 = "";
+    var dir: []const u8 = "src/migrations";
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--dir")) {
+            if (i + 1 >= args.len) return error.CliUsage;
+            dir = args[i + 1];
+            i += 1;
+        } else if (description.len == 0) {
+            description = args[i];
+        }
+    }
+
+    if (description.len == 0) {
+        std.log.err("Migration description is required.", .{});
+        return error.CliUsage;
+    }
+
+    // Create directory if needed
+    std.Io.Dir.cwd().createDirPath(io, dir) catch |err| {
+        std.log.err("Cannot create migration directory '{s}': {s}", .{ dir, @errorName(err) });
+        return err;
+    };
+
+    // Generate timestamp YYYYMMDDHHMMSS
+    const now_epoch = std.time.epoch.unix;
+    const epoch_seconds: u64 = @intCast(now_epoch);
+    const seconds_per_day: u64 = 86400;
+    const days_since_epoch = epoch_seconds / seconds_per_day;
+
+    // Simple date calculation (good enough for migration timestamps)
+    var remaining_days = days_since_epoch;
+    var year: u64 = 1970;
+    while (true) {
+        const days_in_year = if ((year % 4 == 0 and year % 100 != 0) or year % 400 == 0) @as(u64, 366) else @as(u64, 365);
+        if (remaining_days < days_in_year) break;
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+
+    const month_days_normal = [_]u64{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    const month_days_leap = [_]u64{ 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    const leap = (year % 4 == 0 and year % 100 != 0) or year % 400 == 0;
+    const month_days = if (leap) &month_days_leap else &month_days_normal;
+
+    var month: u64 = 1;
+    for (month_days) |md| {
+        if (remaining_days < md) break;
+        remaining_days -= md;
+        month += 1;
+    }
+    const day = remaining_days + 1;
+
+    const secs_in_day = epoch_seconds % seconds_per_day;
+    const hour = (secs_in_day / 3600) % 24;
+    const minute = (secs_in_day / 60) % 60;
+    const second = secs_in_day % 60;
+
+    // Sanitize description for filename
+    var safe_name = std.ArrayList(u8).empty;
+    defer safe_name.deinit(allocator);
+    for (description) |c| {
+        if (std.ascii.isAlphanumeric(c) or c == '-' or c == '_') {
+            try safe_name.append(allocator, c);
+        } else {
+            try safe_name.append(allocator, '_');
+        }
+    }
+
+    const filename = try std.fmt.allocPrint(allocator, "V{d:0>4}{d:0>2}{d:0>2}{d:0>2}{d:0>2}{d:0>2}__{s}.sql", .{
+        year, month, day, hour, minute, second, safe_name.items,
+    });
+    defer allocator.free(filename);
+
+    const filepath = try std.fs.path.join(allocator, &.{ dir, filename });
+    defer allocator.free(filepath);
+
+    // Check if file exists (never overwrite migration files)
+    const check = std.Io.Dir.cwd().openFile(io, filepath, .{}) catch null;
+    if (check != null) {
+        std.log.err("Migration file already exists: {s}", .{filepath});
+        return error.RefuseOverwrite;
+    }
+
+    const content = try std.fmt.allocPrint(allocator,
+        \\-- version: {d:0>4}{d:0>2}{d:0>2}{d:0>2}{d:0>2}{d:0>2}
+        \\-- description: {s}
+        \\-- rollback: (define rollback SQL)
+        \\
+        \\-- TODO: write migration SQL here
+        \\
+    , .{ year, month, day, hour, minute, second, description });
+    defer allocator.free(content);
+
+    try writeFile(io, filepath, content);
+
+    std.log.info("Created migration: {s}", .{filepath});
+}
+
+// ── health: generate health check endpoint boilerplate ──────────────
+
+fn cmdHealth(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (args.len > 0 and std.mem.eql(u8, args[0], "--help")) {
+        std.log.info("usage: zmodu health [--out <dir>] [--module <name>]", .{});
+        return;
+    }
+
+    var out_dir: []const u8 = "src/modules";
+    var module_name: ?[]const u8 = null;
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--out")) {
+            if (i + 1 >= args.len) return error.CliUsage;
+            out_dir = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, args[i], "--module")) {
+            if (i + 1 >= args.len) return error.CliUsage;
+            module_name = args[i + 1];
+            i += 1;
+        }
+    }
+
+    const target_dir = if (module_name) |mn|
+        try std.fs.path.join(allocator, &.{ out_dir, mn })
+    else
+        try allocator.dupe(u8, out_dir);
+    defer allocator.free(target_dir);
+
+    std.Io.Dir.cwd().createDirPath(io, target_dir) catch |err| {
+        std.log.err("Cannot create directory '{s}': {s}", .{ target_dir, @errorName(err) });
+        return err;
+    };
+
+    const filepath = try std.fs.path.join(allocator, &.{ target_dir, "health.zig" });
+    defer allocator.free(filepath);
+
+    const content =
+        \\const std = @import("std");
+        \\const zigmodu = @import("zigmodu");
+        \\
+        \\const HealthEndpoint = zigmodu.HealthEndpoint;
+        \\
+        \\pub fn registerHealthChecks(endpoint: *HealthEndpoint) !void {
+        \\    // Liveness: always UP while process is alive
+        \\    try endpoint.registerCheck("liveness", "Process liveness", HealthEndpoint.alwaysUp);
+        \\
+        \\    // Add your custom health checks here. Examples:
+        \\    //
+        \\    // Database check:
+        \\    // try endpoint.registerCheckWithContext("database", "Database connectivity",
+        \\    //     HealthEndpoint.databaseCheck, @ptrCast(&db_pool));
+        \\    //
+        \\    // Redis check:
+        \\    // try endpoint.registerCheckWithContext("redis", "Redis connectivity",
+        \\    //     HealthEndpoint.redisCheck, @ptrCast(&redis_client));
+        \\    //
+        \\    // Disk check:
+        \\    // const min_space: u64 = 100 * 1024 * 1024; // 100MB
+        \\    // try endpoint.registerCheckWithContext("disk", "Disk space check",
+        \\    //     HealthEndpoint.diskSpaceCheck, @ptrCast(&min_space));
+        \\}
+        \\
+    ;
+
+    const check_result = std.Io.Dir.cwd().openFile(io, filepath, .{}) catch null;
+    if (check_result != null) {
+        std.log.err("File already exists: {s} (use --force to overwrite)", .{filepath});
+        return error.RefuseOverwrite;
+    }
+
+    try writeFile(io, filepath, content);
+
+    std.log.info("Created health check: {s}", .{filepath});
+}
+
+// ── config: generate ExternalizedConfig boilerplate ──────────────────
+
+fn cmdConfig(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (args.len > 0 and std.mem.eql(u8, args[0], "--help")) {
+        std.log.info("usage: zmodu config [--out <dir>] [--keys k1,k2,...]", .{});
+        return;
+    }
+
+    var out_dir: []const u8 = "src";
+    var keys_str: ?[]const u8 = null;
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--out")) {
+            if (i + 1 >= args.len) return error.CliUsage;
+            out_dir = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, args[i], "--keys")) {
+            if (i + 1 >= args.len) return error.CliUsage;
+            keys_str = args[i + 1];
+            i += 1;
+        }
+    }
+
+    std.Io.Dir.cwd().createDirPath(io, out_dir) catch |err| {
+        std.log.err("Cannot create directory '{s}': {s}", .{ out_dir, @errorName(err) });
+        return err;
+    };
+
+    const filepath = try std.fs.path.join(allocator, &.{ out_dir, "config.zig" });
+    defer allocator.free(filepath);
+
+    // Build key list
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator,
+        \\const std = @import("std");
+        \\const zigmodu = @import("zigmodu");
+        \\
+        \\pub const RequiredKeys = [_][]const u8{
+        \\
+    );
+
+    if (keys_str) |ks| {
+        var key_iter = std.mem.splitScalar(u8, ks, ',');
+        while (key_iter.next()) |key| {
+            const trimmed = std.mem.trim(u8, key, " ");
+            if (trimmed.len > 0) {
+                try buf.print(allocator, "    \"{s}\",\n", .{trimmed});
+            }
+        }
+    } else {
+        try buf.appendSlice(allocator, "    \"DB_HOST\",\n");
+        try buf.appendSlice(allocator, "    \"DB_PORT\",\n");
+        try buf.appendSlice(allocator, "    \"DB_NAME\",\n");
+    }
+
+    try buf.appendSlice(allocator,
+        \\};
+        \\
+        \\pub fn validateConfig(config: *zigmodu.ExternalizedConfig, allocator: std.mem.Allocator) !void {
+        \\    const missing = try config.validateRequired(&RequiredKeys, allocator);
+        \\    defer allocator.free(missing);
+        \\    if (missing.len > 0) {
+        \\        for (missing) |key| {
+        \\            std.log.err("Missing required config key: {s}", .{key});
+        \\        }
+        \\        return error.ConfigurationError;
+        \\    }
+        \\}
+        \\
+    );
+
+    const check_result = std.Io.Dir.cwd().openFile(io, filepath, .{}) catch null;
+    if (check_result != null) {
+        std.log.err("File already exists: {s} (use --force to overwrite)", .{filepath});
+        return error.RefuseOverwrite;
+    }
+
+    try writeFile(io, filepath, buf.items);
+
+    std.log.info("Created config validator: {s}", .{filepath});
 }
 
 // ── bigdemo: shortcut to regenerate the full shopdemo ──────────────
