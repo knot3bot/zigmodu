@@ -1,0 +1,9 @@
+*.tar.gz
+*.sha256
+zig-out/
+src/
+templates/
+.zig-cache/
+build.zig
+build.zig.zon
+BEST_PRACTICES.md

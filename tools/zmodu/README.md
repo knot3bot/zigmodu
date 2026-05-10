@@ -4,6 +4,15 @@ Code generation tool for ZigModu framework with **Modulith style** architecture.
 
 ## Installation
 
+### Via npm (recommended)
+
+```bash
+npm install -g zmodu
+zmodu --help
+```
+
+### Via Zig build
+
 ```bash
 cd tools/zmodu
 zig build install-zmodu
@@ -14,6 +23,10 @@ Or run directly:
 cd tools/zmodu
 zig build run -- <command>
 ```
+
+### Via manual download
+
+Download the latest binary from [GitHub Releases](https://github.com/knot3bot/zigmodu/releases) for your platform.
 
 ### Exit codes
 - **0** — 成功  
