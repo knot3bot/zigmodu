@@ -5,9 +5,9 @@ A modular application framework for Zig 0.16.0, inspired by Spring Modulith. Bui
 [![Zig](https://img.shields.io/badge/Zig-0.16.0+-orange?style=flat-square)](https://ziglang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 [![Build](https://img.shields.io/badge/Build-Passing-green?style=flat-square)](https://github.com/knot3bot/zigmodu/actions)
-[![Tests](https://img.shields.io/badge/Tests-334%20passed-green?style=flat-square)]()
-[![Version](https://img.shields.io/badge/Version-0.8.0-blue?style=flat-square)]()
-[![Score](https://img.shields.io/badge/Production_Readiness-75%2F100-yellow?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/Tests-338%20passed%20%7C%200%20failed-green?style=flat-square)]()
+[![Version](https://img.shields.io/badge/Version-0.8.2-blue?style=flat-square)]()
+[![Score](https://img.shields.io/badge/Production_Readiness-84%2F100-green?style=flat-square)]()
 
 ## 📚 Documentation
 
