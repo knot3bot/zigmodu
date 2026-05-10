@@ -189,15 +189,20 @@ pub const SecretsManager = struct {
     }
 
     fn setWithPriority(self: *Self, key: []const u8, value: []const u8, source: SecretsSourcePriority) !void {
-        const existing = self.secrets.get(key);
-        if (existing) |entry| {
+        if (self.secrets.get(key)) |entry| {
             if (@intFromEnum(source) >= @intFromEnum(entry.source)) {
+                // Lower or equal priority: discard the new key/value, keep existing
                 self.allocator.free(key);
                 self.allocator.free(value);
                 return;
             }
-            self.allocator.free(entry.key);
-            self.allocator.free(entry.value);
+            // Higher priority: remove old entry first so put doesn't compare
+            // against freed memory, then free old key/value after.
+            const old_key = entry.key;
+            const old_val = entry.value;
+            _ = self.secrets.remove(key);
+            self.allocator.free(old_key);
+            self.allocator.free(old_val);
         }
 
         try self.secrets.put(key, .{
