@@ -131,15 +131,10 @@ pub const ContractTestRunner = struct {
 
         // 验证状态码
         if (actual_status != contract.response.status) {
-            const expected_str = try std.fmt.allocPrint(self.allocator, "{d}", .{contract.response.status});
-            defer self.allocator.free(expected_str);
-            const actual_str = try std.fmt.allocPrint(self.allocator, "{d}", .{actual_status});
-            defer self.allocator.free(actual_str);
-
             try failures.append(self.allocator, .{
                 .field = try self.allocator.dupe(u8, "status"),
-                .expected = expected_str,
-                .actual = actual_str,
+                .expected = try std.fmt.allocPrint(self.allocator, "{d}", .{contract.response.status}),
+                .actual = try std.fmt.allocPrint(self.allocator, "{d}", .{actual_status}),
                 .message = try self.allocator.dupe(u8, "HTTP status mismatch"),
             });
         }
