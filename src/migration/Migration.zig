@@ -444,7 +444,9 @@ test "MigrationLoader parse filename - invalid" {
 }
 
 test "MigrationLoader parse migration file content" {
-    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     const content =
         \\-- version: 20260101000000
@@ -459,9 +461,6 @@ test "MigrationLoader parse migration file content" {
     ;
 
     const result = try MigrationLoader.parseMigrationFile(allocator, content);
-    defer allocator.free(result.description);
-    defer allocator.free(result.sql);
-    if (result.rollback_sql) |rb| allocator.free(rb);
 
     try std.testing.expectEqual(@as(i64, 20260101000000), result.version);
     try std.testing.expectEqualStrings("Create users table", result.description);
