@@ -50,15 +50,7 @@ jobs:
 
       - name: Setup Zig
         run: |
-          case "${{ matrix.platform }}" in
-            macos)
-              ZIG_PLATFORM="macos-${{ matrix.arch == 'x86_64' && 'x86_64' || 'aarch64' }}"
-              ;;
-            linux)
-              ZIG_PLATFORM="linux-${{ matrix.arch == 'x86_64' && 'x86_64' || 'aarch64' }}"
-              ;;
-          esac
-          ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.tar.xz"
+          ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-${{ matrix.arch }}-${{ matrix.platform }}-${ZIG_VERSION}.tar.xz"
           echo "Downloading Zig from $ZIG_URL"
           curl -fsSL "$ZIG_URL" -o zig.tar.xz
           mkdir -p "$HOME/zig"
