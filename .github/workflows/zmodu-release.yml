@@ -118,7 +118,7 @@ jobs:
 
             ```bash
             # Via npm (recommended)
-            npm install -g zmodu
+            npm install -g @chy3xyz/zmodu
 
             # Manual download
             curl -fsSL https://github.com/knot3bot/zigmodu/releases/download/${{ github.ref_name }}/zmodu-macos-aarch64.tar.gz | tar -xzf -
@@ -142,11 +142,16 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Set version from tag
+      - name: Set version
         run: |
-          TAG="${{ github.ref_name }}"
-          # Strip 'zmodu-v' prefix to get semver: zmodu-v0.6.0 → 0.6.0
-          VERSION="${TAG#zmodu-v}"
+          # On tag push: strip 'zmodu-v' prefix (zmodu-v0.6.0 → 0.6.0)
+          # On workflow_dispatch: use the 'version' input directly
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#zmodu-v}"
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Update package.json version
