@@ -104,3 +104,41 @@ fn base64Decode(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
     try decoder.decode(buf, text);
     return buf;
 }
+
+// ── Tests ──
+
+test "PasswordEncoder encode and matches" {
+    const allocator = std.testing.allocator;
+    var encoder = PasswordEncoder.init(allocator);
+
+    const hash = try encoder.encode("my_password");
+    defer allocator.free(hash);
+
+    try std.testing.expect(encoder.matches("my_password", hash));
+    try std.testing.expect(!encoder.matches("wrong_password", hash));
+}
+
+test "PasswordEncoder empty password" {
+    const allocator = std.testing.allocator;
+    var encoder = PasswordEncoder.init(allocator);
+
+    const hash = try encoder.encode("");
+    defer allocator.free(hash);
+
+    try std.testing.expect(encoder.matches("", hash));
+}
+
+test "PasswordEncoder needsUpgrade with low iterations" {
+    const allocator = std.testing.allocator;
+    var encoder = PasswordEncoder.init(allocator);
+
+    var low_iter = PasswordEncoder.initWithIterations(allocator, 10_000);
+    const old_hash = try low_iter.encode("test");
+    defer allocator.free(old_hash);
+
+    try std.testing.expect(encoder.needsUpgrade(old_hash));
+}
+
+test "PasswordEncoder default iterations" {
+    try std.testing.expectEqual(@as(u32, 100_000), PasswordEncoder.default_iterations);
+}

@@ -97,7 +97,7 @@ pub const Application = struct {
         self.state = .stopped;
     }
 
-    /// Validate module dependencies
+    /// Validate module dependencies (cold path — startup only).
     /// Returns error if validation fails
     pub fn validate(self: *Self) !void {
         if (self.state == .validated or self.state == .started) {

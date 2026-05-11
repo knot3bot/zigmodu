@@ -77,12 +77,12 @@ pub const WAL = struct {
 
     pub fn deinit(self: *Self) void {
         for (self.segments.items) |seg| {
-            seg.file.sync(self.io) catch {};
+            seg.file.sync(self.io) catch |err| std.log.err("[WAL] Failed to sync segment {d}: {}", .{ seg.id, err });
             seg.file.close(self.io);
             self.allocator.free(seg.path);
             self.allocator.destroy(seg);
         }
-        self.current_segment.file.sync(self.io) catch {};
+        self.current_segment.file.sync(self.io) catch |err| std.log.err("[WAL] Failed to sync current segment: {}", .{err});
         self.current_segment.file.close(self.io);
         self.allocator.free(self.current_segment.path);
         self.allocator.destroy(self.current_segment);

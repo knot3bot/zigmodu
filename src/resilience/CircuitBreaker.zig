@@ -53,8 +53,7 @@ pub const CircuitBreaker = struct {
     /// Thread safety: this method is NOT thread-safe. For concurrent access,
     /// wrap the CircuitBreaker in a Mutex or use one instance per fiber.
     pub fn call(self: *Self, operation: *const fn () anyerror!void) Result {
-        // Short-circuit: in CLOSED state (hot path), skip the syscall.
-        // Only check for OPEN→HALF_OPEN transition when the breaker is actually OPEN.
+        // Hot path: CLOSED state (~99.9% of calls) skips the updateState syscall.
         if (self.state != .CLOSED) {
             self.updateState();
         }

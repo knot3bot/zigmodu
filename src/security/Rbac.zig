@@ -299,3 +299,50 @@ pub const Permissions = struct {
     pub const system_tenant_update = "system:tenant:update";
     pub const system_tenant_delete = "system:tenant:delete";
 };
+
+// ── Tests ──
+
+test "AuthInfo hasPermission" {
+    const allocator = std.testing.allocator;
+    var auth = AuthInfo{
+        .user_id = 1,
+        .tenant_id = 1,
+        .username = "test",
+        .role_ids = &.{},
+        .permissions = .{},
+    };
+
+    // Empty permissions: always deny
+    try std.testing.expect(!auth.hasPermission("read"));
+    try std.testing.expect(!auth.hasAnyPermission(&.{"read"}));
+    try std.testing.expect(auth.hasAllPermissions(&.{})); // empty set: trivially true
+
+    // Add permissions
+    try auth.permissions.put(allocator, try allocator.dupe(u8, "read"), true);
+    try auth.permissions.put(allocator, try allocator.dupe(u8, "write"), true);
+
+    try std.testing.expect(auth.hasPermission("read"));
+    try std.testing.expect(!auth.hasPermission("delete"));
+    try std.testing.expect(auth.hasAnyPermission(&.{"delete", "read"}));
+    try std.testing.expect(auth.hasAllPermissions(&.{"read", "write"}));
+    try std.testing.expect(!auth.hasAllPermissions(&.{"read", "write", "admin"}));
+
+    auth.deinit(allocator);
+}
+
+test "DataScope fromInt" {
+    try std.testing.expectEqual(DataScope.all, DataScope.fromInt(1));
+    try std.testing.expectEqual(DataScope.self_, DataScope.fromInt(5));
+    try std.testing.expectEqual(DataScope.self_, DataScope.fromInt(99)); // default
+}
+
+test "Menu isDir isMenu isButton" {
+    const menu = Menu{ .menu_type = .dir };
+    const item = Menu{ .menu_type = .menu };
+    const btn = Menu{ .menu_type = .button };
+
+    try std.testing.expect(menu.isDir());
+    try std.testing.expect(!menu.isButton());
+    try std.testing.expect(item.isMenu());
+    try std.testing.expect(btn.isButton());
+}
