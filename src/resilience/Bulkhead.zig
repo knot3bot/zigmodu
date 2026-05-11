@@ -245,3 +245,22 @@ test "BulkheadRegistry get or create" {
     try std.testing.expect(bh1.tryAcquire());
     try std.testing.expectEqual(@as(u32, 1), bh1.getActiveCount());
 }
+
+test "Bulkhead queue full rejection" {
+    const allocator = std.testing.allocator;
+    var bh = try Bulkhead.init(allocator, "queue-test", 3, 2);
+    defer bh.deinit();
+
+    // Exhaust concurrent slots
+    try std.testing.expect(bh.tryAcquire());
+    try std.testing.expect(bh.tryAcquire());
+    try std.testing.expect(bh.tryAcquire());
+    try std.testing.expectEqual(@as(u32, 3), bh.getActiveCount());
+
+    // Next call should be rejected (queue full + no concurrent slots)
+    try std.testing.expect(!bh.tryAcquire());
+
+    // Release and re-acquire should work
+    bh.release();
+    try std.testing.expect(bh.tryAcquire());
+}
