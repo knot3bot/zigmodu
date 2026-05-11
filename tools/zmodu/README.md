@@ -1,5 +1,7 @@
 # ZModu
 
+> **Moved to [chy3xyz/zmodu](https://github.com/chy3xyz/zmodu)** — this is now the canonical repository. The copy in `tools/zmodu/` is kept for local monorepo development.
+
 Code generation tool for ZigModu framework with **Modulith style** architecture.
 
 ## Installation
