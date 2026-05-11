@@ -80,6 +80,13 @@ pub fn jwtAuth(security: *SecurityModule, allocator: std.mem.Allocator) !api.Mid
 /// 权限校验中间件 — 要求单一权限
 /// 需在 jwtAuth 之后使用
 pub fn requirePermission(perm: []const u8) api.Middleware {
+    const perm_copy = std.heap.page_allocator.dupe(u8, perm) catch return .{
+        .func = struct {
+            fn mw(ctx: *api.Context, _: api.HandlerFn, _: ?*anyopaque) anyerror!void {
+                try ctx.sendErrorResponse(403, 403, "Permission check unavailable");
+            }
+        }.mw,
+    };
     return .{
         .func = struct {
             fn mw(ctx: *api.Context, next: api.HandlerFn, user_data: ?*anyopaque) anyerror!void {
@@ -96,7 +103,7 @@ pub fn requirePermission(perm: []const u8) api.Middleware {
                 try next(ctx);
             }
         }.mw,
-        .user_data = @constCast(@ptrCast(perm.ptr)),
+        .user_data = perm_copy.ptr,
     };
 }
 

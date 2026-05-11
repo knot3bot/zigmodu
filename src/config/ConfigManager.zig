@@ -179,18 +179,33 @@ pub const ConfigManager = struct {
         return self.values.contains(key);
     }
 
-    /// Dump configuration for debugging
+    /// Dump configuration for debugging. Values for keys matching sensitive
+    /// patterns (password, secret, token, key, auth) are masked with `***`.
     pub fn dump(self: *Self, writer: anytype) !void {
+        const sensitive_patterns = [_][]const u8{ "password", "secret", "token", "key", "auth", "passwd", "pwd", "credential" };
         try writer.writeAll("Configuration:\n");
         var iter = self.values.iterator();
         while (iter.next()) |entry| {
-            try writer.print("  {s} = ", .{entry.key_ptr.*});
-            switch (entry.value_ptr.*) {
-                .string => |s| try writer.print("\"{s}\"\n", .{s}),
-                .integer => |i| try writer.print("{d}\n", .{i}),
-                .float => |f| try writer.print("{d}\n", .{f}),
-                .boolean => |b| try writer.print("{s}\n", .{if (b) "true" else "false"}),
-                else => try writer.writeAll("<complex>\n"),
+            const key_lower = entry.key_ptr.*;
+            var is_sensitive = false;
+            for (sensitive_patterns) |pat| {
+                if (std.ascii.indexOfIgnoreCase(key_lower, pat) != null) {
+                    is_sensitive = true;
+                    break;
+                }
+            }
+
+            try writer.print("  {s} = ", .{key_lower});
+            if (is_sensitive) {
+                try writer.writeAll("\"***\"\n");
+            } else {
+                switch (entry.value_ptr.*) {
+                    .string => |s| try writer.print("\"{s}\"\n", .{s}),
+                    .integer => |i| try writer.print("{d}\n", .{i}),
+                    .float => |f| try writer.print("{d}\n", .{f}),
+                    .boolean => |b| try writer.print("{s}\n", .{if (b) "true" else "false"}),
+                    else => try writer.writeAll("<complex>\n"),
+                }
             }
         }
     }
