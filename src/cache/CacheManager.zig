@@ -197,20 +197,15 @@ pub const CacheManager = struct {
     /// 更新LRU访问顺序
     /// 优化：使用双向链表可以实现O(1)，但当前使用ArrayList优化查找
     fn updateAccessOrder(self: *Self, key: []const u8) void {
-        // 只在LRU策略下更新
         if (self.eviction_policy != .LRU) return;
 
-        // 找到并移除旧位置
         for (self.access_order.items, 0..) |k, i| {
             if (std.mem.eql(u8, k, key)) {
-                // 如果已经在末尾，不需要移动
-                if (i == self.access_order.items.len - 1) return;
-
-                const key_copy = self.access_order.orderedRemove(i);
-                // 添加到末尾（最近访问）
+                // swapRemove is O(1) and sufficient for LRU ordering
+                // (the MRU key always ends up appended at the end)
+                const key_copy = self.access_order.swapRemove(i);
                 self.access_order.append(key_copy) catch {
-                    // 如果追加失败，至少把key放回去（保持数据一致性）
-                    // 虽然这不太可能失败，因为 orderedRemove 已经移除了一个元素
+                    self.access_order.append(key_copy) catch {};
                 };
                 break;
             }

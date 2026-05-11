@@ -58,6 +58,9 @@ pub const Route = struct {
     handler: HandlerFn,
     middleware: []const Middleware = &.{},
     user_data: ?*anyopaque = null,
+    /// Pre-computed global + route-specific middleware chain.
+    /// Set by addRoute() — do not set manually.
+    combined_middleware: []const Middleware = &.{},
 };
 
 /// Route group helper to prefix paths.
@@ -637,7 +640,10 @@ const TrieNode = struct {
     pub fn deinit(self: *TrieNode, allocator: std.mem.Allocator) void {
         allocator.free(self.segment);
         if (self.param_name) |name| allocator.free(name);
-        if (self.route) |route| allocator.free(route.path);
+        if (self.route) |route| {
+            allocator.free(route.path);
+            allocator.free(route.combined_middleware);
+        }
         for (self.children.items) |child| {
             child.deinit(allocator);
         }
@@ -934,7 +940,17 @@ pub const Server = struct {
     }
 
     pub fn addRoute(self: *Server, route: Route) !void {
-        try self.router.addRoute(route);
+        var r = route;
+        // Pre-compose global + route middleware so executeWithMiddleware
+        // avoids alloc+memcpy+free per request.
+        if (self.global_middleware.items.len > 0 or route.middleware.len > 0) {
+            const total = self.global_middleware.items.len + route.middleware.len;
+            const combined = try self.allocator.alloc(Middleware, total);
+            @memcpy(combined[0..self.global_middleware.items.len], self.global_middleware.items);
+            @memcpy(combined[self.global_middleware.items.len..], route.middleware);
+            r.combined_middleware = combined;
+        }
+        try self.router.addRoute(r);
     }
 
     pub fn group(self: *Server, prefix: []const u8) RouteGroup {
@@ -957,16 +973,9 @@ pub const Server = struct {
         self.in_flight = counter;
     }
 
-    fn executeWithMiddleware(self: *Server, ctx: *Context, final_handler: HandlerFn, route_middleware: []const Middleware) !void {
-        // Build combined middleware list: global + route-specific
-        const total_mw = self.global_middleware.items.len + route_middleware.len;
-        const combined = try self.allocator.alloc(Middleware, total_mw);
-        defer self.allocator.free(combined);
-
-        @memcpy(combined[0..self.global_middleware.items.len], self.global_middleware.items);
-        @memcpy(combined[self.global_middleware.items.len..], route_middleware);
-
-        ctx.chain_middlewares = combined;
+    fn executeWithMiddleware(self: *Server, ctx: *Context, final_handler: HandlerFn, combined_middleware: []const Middleware) !void {
+        _ = self;
+        ctx.chain_middlewares = combined_middleware;
         ctx.chain_handler = final_handler;
         ctx.chain_index = 0;
 
@@ -1115,7 +1124,7 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
 
             ctx.user_data = m.route.user_data;
 
-            server.executeWithMiddleware(&ctx, m.route.handler, m.route.middleware) catch |err| {
+            server.executeWithMiddleware(&ctx, m.route.handler, m.route.combined_middleware) catch |err| {
                 std.log.err("[HC] Handler error: {any}", .{err});
                 if (!ctx.responded) {
                     ctx.sendError(500, @errorName(err)) catch {};
@@ -1546,7 +1555,7 @@ test "integration: router + global middleware + handler" {
         defer ctx.deinit();
 
         // Execute with middleware chain
-        try server.executeWithMiddleware(&ctx, m.route.handler, m.route.middleware);
+        try server.executeWithMiddleware(&ctx, m.route.handler, m.route.combined_middleware);
 
         try std.testing.expect(MwCtx.called);
         try std.testing.expect(MwCtx.handled);
@@ -1615,7 +1624,7 @@ test "e2e: full middleware chain with error path" {
             }
             var ctx = try Context.init(allocator, .POST, "/items");
             defer ctx.deinit();
-            try server.executeWithMiddleware(&ctx, m.route.handler, m.route.middleware);
+            try server.executeWithMiddleware(&ctx, m.route.handler, m.route.combined_middleware);
             try std.testing.expectEqual(@as(u32, 1), Ctx.hit_count);
             try std.testing.expectEqual(@as(u16, 201), ctx.status_code);
             try std.testing.expect(ctx.responded);
@@ -1644,7 +1653,7 @@ test "e2e: full middleware chain with error path" {
             }
             var ctx = try Context.init(allocator, .GET, "/boom");
             defer ctx.deinit();
-            server.executeWithMiddleware(&ctx, m.route.handler, m.route.middleware) catch {
+            server.executeWithMiddleware(&ctx, m.route.handler, m.route.combined_middleware) catch {
                 _ = ctx.sendError(500, "Internal Server Error") catch {};
             };
             try std.testing.expectEqual(@as(u32, 1), Ctx.hit_count);
