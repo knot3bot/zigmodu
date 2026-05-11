@@ -444,3 +444,21 @@ test "RaftElection vote request validation" {
     try std.testing.expect(resp.vote_granted);
     try std.testing.expectEqual(@as(u64, 5), election.getTerm());
 }
+
+test "RaftElection rejects stale term vote" {
+    const allocator = std.testing.allocator;
+    var election = try RaftElection.init(allocator, "node-a", 3);
+    defer election.deinit();
+
+    // Advance term
+    _ = try election.handleVoteRequest(.{
+        .term = 5, .candidate_id = "c1", .last_log_index = 1, .last_log_term = 1,
+    });
+    try std.testing.expectEqual(@as(u64, 5), election.getTerm());
+
+    // Stale term vote should be rejected
+    const resp = try election.handleVoteRequest(.{
+        .term = 3, .candidate_id = "c2", .last_log_index = 1, .last_log_term = 1,
+    });
+    try std.testing.expect(!resp.vote_granted);
+}

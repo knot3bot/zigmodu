@@ -507,3 +507,30 @@ test "ClusterMembership node health tracking" {
 
     try std.testing.expectEqual(@as(usize, 2), cluster.getHealthyNodeCount());
 }
+
+test "ClusterMembership node leave and rejoin" {
+    const allocator = std.testing.allocator;
+    var cluster = try ClusterMembership.init(allocator, "test-3", "127.0.0.1", 18090);
+    defer cluster.deinit();
+
+    // Add 2 nodes
+    cluster.handleGossipEvent(.{
+        .event_type = .join, .node_id = "n1", .host = "127.0.0.1", .port = 1, .timestamp = 0,
+    });
+    cluster.handleGossipEvent(.{
+        .event_type = .join, .node_id = "n2", .host = "127.0.0.1", .port = 2, .timestamp = 0,
+    });
+    try std.testing.expectEqual(@as(usize, 2), cluster.getHealthyNodeCount());
+
+    // Node leaves
+    cluster.handleGossipEvent(.{
+        .event_type = .leave, .node_id = "n1", .host = "127.0.0.1", .port = 1, .timestamp = 0,
+    });
+    try std.testing.expectEqual(@as(usize, 1), cluster.getHealthyNodeCount());
+
+    // Node rejoins
+    cluster.handleGossipEvent(.{
+        .event_type = .join, .node_id = "n1", .host = "127.0.0.1", .port = 1, .timestamp = 0,
+    });
+    try std.testing.expectEqual(@as(usize, 2), cluster.getHealthyNodeCount());
+}
