@@ -301,3 +301,4 @@ test "jwtAuth middleware rejects missing authorization" {
     try std.testing.expectEqual(@as(u16, 401), ctx.status_code);
     try std.testing.expect(ctx.responded);
 }
+
