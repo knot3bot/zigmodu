@@ -17,9 +17,7 @@ pub const PasswordEncoder = struct {
 
     pub fn encode(self: *PasswordEncoder, raw_password: []const u8) ![]const u8 {
         var salt: [16]u8 = undefined;
-        var seed: [32]u8 = undefined; std.mem.writeInt(u64, seed[0..8], @as(u64, @intCast(@import("../core/Time.zig").monotonicNowSeconds())), .little);
-        var csprng = std.Random.DefaultCsprng.init(seed);
-        csprng.fill(&salt);
+        std.crypto.random.bytes(&salt); // OS CSPRNG — no manual seeding needed
 
         var derived_key: [32]u8 = undefined;
         try crypto.pwhash.pbkdf2(
@@ -69,7 +67,9 @@ pub const PasswordEncoder = struct {
             crypto.auth.hmac.sha2.HmacSha256,
         ) catch return false;
 
-        return std.mem.eql(u8, &derived_key, expected_hash);
+        // Constant-time comparison to prevent timing side-channel
+        if (expected_hash.len != derived_key.len) return false;
+        return std.crypto.timing_safe.eql(&derived_key, expected_hash[0..derived_key.len]);
     }
 
     pub fn needsUpgrade(self: *PasswordEncoder, encoded_hash: []const u8) bool {

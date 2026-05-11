@@ -128,7 +128,10 @@ pub const SecurityModule = struct {
         const expected_signature = try self.sign(signature_base);
         defer self.allocator.free(expected_signature);
 
-        if (!std.mem.eql(u8, signature, expected_signature)) {
+        // Constant-time comparison to prevent timing side-channel
+        if (signature.len != expected_signature.len or
+            !std.crypto.timing_safe.eql(signature, expected_signature))
+        {
             return error.InvalidSignature;
         }
 
@@ -189,11 +192,7 @@ pub const SecurityModule = struct {
 
     pub fn hashPassword(self: *Self, password: []const u8) ![]const u8 {
         var salt: [16]u8 = undefined;
-        // Use cryptographically secure random for salt
-        var seed: [32]u8 = undefined;
-        std.mem.writeInt(u64, seed[0..8], @intCast(std.time.epoch.unix), .little);
-        var csprng = std.Random.DefaultCsprng.init(seed);
-        csprng.fill(&salt);
+        std.crypto.random.bytes(&salt); // OS CSPRNG — no manual seeding needed
 
         // SAFETY: Buffer is immediately filled by pbkdf2() before use
         var derived_key: [32]u8 = undefined;
@@ -240,7 +239,9 @@ pub const SecurityModule = struct {
         const hash_b64 = base64Encode(self.allocator, &derived_key) catch return false;
         defer self.allocator.free(hash_b64);
 
-        return std.mem.eql(u8, hash_b64, expected_hash_b64);
+        // Constant-time comparison to prevent timing side-channel
+        if (hash_b64.len != expected_hash_b64.len) return false;
+        return std.crypto.timing_safe.eql(hash_b64, expected_hash_b64);
     }
 
     /// 检查角色权限
