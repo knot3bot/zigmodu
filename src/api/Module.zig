@@ -1,7 +1,34 @@
 const std = @import("std");
 
-/// Module metadata definition
-/// Used to annotate business modules in Zig
+// ================================================================
+// Module Lifecycle Contract
+// ================================================================
+//
+// A ZigModu module is ANY struct that satisfies this contract:
+//
+//   pub const info: zigmodu.api.Module = .{
+//       .name        = "my-module",          // required
+//       .description = "What it does",        // required
+//       .dependencies = &.{"other-module"},   // optional
+//   };
+//
+//   pub fn init() !void { ... }              // called at startup (dep order)
+//   pub fn deinit() void { ... }             // called at shutdown (reverse order)
+//
+// Lifecycle guarantee:
+//   - `init()` is called AFTER all dependency modules have initialized
+//   - `deinit()` is called BEFORE any dependency module is deinitialized
+//   - If any `init()` returns an error, startup aborts and already-started
+//     modules are stopped in reverse order (best-effort cleanup)
+//   - `init()`/`deinit()` are called exactly once per Application instance
+//
+// Dependency resolution:
+//   - Dependencies are specified by `info.dependencies` name list
+//   - Circular dependencies are detected at validation time (compile error)
+//   - Missing dependencies are detected at validation time (compile error)
+
+/// Module metadata definition.
+/// Annotate your module struct with `pub const info: Module = .{...};`
 pub const Module = struct {
     name: []const u8,
     description: []const u8 = "",

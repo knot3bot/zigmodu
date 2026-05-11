@@ -1,5 +1,9 @@
 //! Consistent Hashing Partitioner
 //!
+//!
+//! ⚠️ WORK IN PROGRESS — not yet wired into DistributedEventBus.
+//! Tests are implemented but disabled pending integration.
+//!
 //! Routes messages to nodes using consistent hashing with virtual nodes.
 //! This provides:
 //! - Uniform distribution across nodes

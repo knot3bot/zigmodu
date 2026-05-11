@@ -1,5 +1,8 @@
 //! Validation utilities for zigzero
 //!
+//! ⚠️ DEPRECATED — use `zigmodu.Validator` (validation/ObjectValidator.zig) instead.
+//! This GoZero-style validator will be removed in v1.0.
+//!
 //! Provides input validation aligned with go-zero's validate patterns.
 
 const std = @import("std");

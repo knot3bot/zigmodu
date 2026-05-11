@@ -1,5 +1,9 @@
 //! Write-Ahead Log (WAL) for DistributedEventBus
 //!
+//!
+//! ⚠️ WORK IN PROGRESS — not yet wired into DistributedEventBus.
+//! Tests are implemented but disabled pending integration.
+//!
 //! The WAL provides durability guarantees by ensuring all published messages
 //! are written to disk before being considered delivered.
 //!

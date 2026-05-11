@@ -1,0 +1,28 @@
+//! HTTP domain: server, middleware, client, OpenAPI, utilities.
+//! Import directly for fast compilation: `const http = @import("zigmodu").http;`
+
+pub const http_server = @import("api/Server.zig");
+pub const RouteInfo = @import("api/Server.zig").RouteInfo;
+pub const http_middleware = @import("api/Middleware.zig");
+pub const tracing_middleware = @import("api/middleware/Tracing.zig");
+pub const validateRequest = @import("api/middleware/Validation.zig").validateRequest;
+pub const validationMiddleware = @import("api/middleware/Validation.zig").validationMiddleware;
+
+pub const HttpClient = @import("http/HttpClient.zig").HttpClient;
+pub const OpenApiGenerator = @import("http/OpenApi.zig").OpenApiGenerator;
+pub const ApiEndpoint = @import("http/OpenApi.zig").ApiEndpoint;
+pub const ApiSchema = @import("http/OpenApi.zig").ApiSchema;
+pub const HttpMethod = @import("http/OpenApi.zig").HttpMethod;
+pub const ProblemDetails = @import("http/ProblemDetails.zig").ProblemDetails;
+pub const ValidationProblem = @import("http/ProblemDetails.zig").ValidationProblem;
+pub const IdempotencyStore = @import("http/Idempotency.zig").IdempotencyStore;
+pub const idempotencyMiddleware = @import("http/Idempotency.zig").idempotencyMiddleware;
+pub const ApiVersion = @import("http/ApiVersioning.zig").ApiVersion;
+pub const ApiVersionExtractor = @import("http/ApiVersioning.zig").ApiVersionExtractor;
+pub const ApiVersionRouter = @import("http/ApiVersioning.zig").ApiVersionRouter;
+pub const apiVersionMiddleware = @import("http/ApiVersioning.zig").apiVersionMiddleware;
+pub const Dashboard = @import("http/Dashboard.zig");
+pub const AccessLogger = @import("http/AccessLog.zig").AccessLogger;
+pub const accessLogMiddleware = @import("http/AccessLog.zig").accessLogMiddleware;
+pub const HttpMetricsCollector = @import("http/HttpMetrics.zig").HttpMetricsCollector;
+pub const httpMetricsMiddleware = @import("http/HttpMetrics.zig").httpMetricsMiddleware;

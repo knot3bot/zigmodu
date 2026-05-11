@@ -1,5 +1,9 @@
 //! Dead Letter Queue (DLQ) for failed message handling
 //!
+//!
+//! ⚠️ WORK IN PROGRESS — not yet wired into DistributedEventBus.
+//! Tests are implemented but disabled pending integration.
+//!
 //! When message delivery fails after max retries, the message is moved to DLQ
 //! where it can be inspected, manually reprocessed, or automatically retried.
 //!
