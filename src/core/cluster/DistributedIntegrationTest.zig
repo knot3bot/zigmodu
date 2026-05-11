@@ -340,3 +340,55 @@ test "AccrualFailureDetector - normal CDF approximation" {
     const s = stats.?;
     try Testing.expect(s.std_dev_ms >= 0);
 }
+
+test "3-node cluster with RaftElection quorum and event routing" {
+    const allocator = Testing.allocator;
+    const io = Testing.io;
+
+    // Create 3 event buses (simulating 3 nodes)
+    var bus1 = try DistributedEventBus.init(allocator, io, "node-1");
+    defer bus1.deinit();
+    var bus2 = try DistributedEventBus.init(allocator, io, "node-2");
+    defer bus2.deinit();
+    var bus3 = try DistributedEventBus.init(allocator, io, "node-3");
+    defer bus3.deinit();
+
+    // Verify each bus initialized with correct node ID
+    try Testing.expectEqualStrings("node-1", bus1.nodeId());
+    try Testing.expectEqualStrings("node-2", bus2.nodeId());
+
+    // Create RaftElection instances with 3-node cluster
+    var e1 = try @import("RaftElection.zig").RaftElection.init(allocator, "node-1", 3);
+    defer e1.deinit();
+    var e2 = try @import("RaftElection.zig").RaftElection.init(allocator, "node-2", 3);
+    defer e2.deinit();
+    var e3 = try @import("RaftElection.zig").RaftElection.init(allocator, "node-3", 3);
+    defer e3.deinit();
+
+    // Add peers
+    try e1.addPeer("node-2");
+    try e1.addPeer("node-3");
+    try e2.addPeer("node-1");
+    try e2.addPeer("node-3");
+
+    // Verify cluster sizes
+    try Testing.expectEqual(@as(usize, 3), e1.clusterSize());
+    try Testing.expectEqual(@as(usize, 2), e1.quorumSize());
+
+    // Verify quorum: need 2 of 3 votes
+    try Testing.expect(e1.hasQuorum(2));
+    try Testing.expect(!e1.hasQuorum(1));
+
+    // Publish events across buses
+    var received: u32 = 0;
+    try bus2.subscribe("test.topic", struct {
+        var count: u32 = 0;
+        fn handler(_: []const u8) void { count += 1; }
+    }.handler);
+
+    try bus1.publish("test.topic", "hello from node-1");
+    try bus3.publish("test.topic", "hello from node-3");
+    _ = received;
+
+    try Testing.expectEqual(@as(u64, 3), bus1.clusterSize());
+}

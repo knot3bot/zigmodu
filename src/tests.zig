@@ -62,6 +62,7 @@ test "compile all source files" {
     _ = @import("core/cluster/PeerDiscovery.zig");
     _ = @import("core/cluster/ClusterMessage.zig");
     _ = @import("core/cluster/TlsTransport.zig");
+    _ = @import("core/cluster/ClusterMetrics.zig");
     _ = @import("messaging/OutboxPublisher.zig");
     _ = @import("tenant/ShardRouter.zig");
 
