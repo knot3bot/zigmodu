@@ -96,7 +96,7 @@ pub const DLQ = struct {
     pub fn init(allocator: std.mem.Allocator, config: DLQConfig) !Self {
         const storage: Storage = switch (config.storage) {
             .memory => .{ .memory = .{
-                .entries = std.ArrayList(DLQEntry).init(allocator),
+                .entries = std.ArrayList(DLQEntry).empty,
             }},
             .sqlite => .{ .sqlite = .{
                 .db_path = try std.fmt.allocPrint(allocator, "{s}/dlq.db", .{"data"}),
@@ -335,7 +335,7 @@ pub const DLQStats = struct {
 // Tests
 // ============================================================================
 
-//test "DLQ memory storage basic operations" {
+test "DLQ memory storage basic operations" {
     const allocator = std.testing.allocator;
     const config = DLQConfig{
         .max_age_seconds = 60,
@@ -362,7 +362,7 @@ pub const DLQStats = struct {
     try std.testing.expectEqual(@as(usize, 1), dlq.size());
 }
 
-//test "DLQ requeue respects cooldown" {
+test "DLQ requeue respects cooldown" {
     const allocator = std.testing.allocator;
     const config = DLQConfig{
         .retry_cooldown_seconds = 60,
@@ -390,7 +390,7 @@ pub const DLQStats = struct {
     try std.testing.expectEqual(@as(usize, 0), count);
 }
 
-//test "DLQ purge expired" {
+test "DLQ purge expired" {
     const allocator = std.testing.allocator;
     const config = DLQConfig{
         .max_age_seconds = 1, // 1 second for testing

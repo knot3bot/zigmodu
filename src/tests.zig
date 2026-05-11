@@ -28,10 +28,9 @@ test "compile all source files" {
     _ = @import("core/ArchitectureTester.zig");
     _ = @import("core/AutoEventListener.zig");
 
-    // WIP modules (tests exist but are disabled pending Zig 0.16 fs API update):
-    // _ = @import("core/eventbus/WAL.zig");
-    // _ = @import("core/eventbus/DLQ.zig");
-    // _ = @import("core/eventbus/Partitioner.zig");
+    _ = @import("core/eventbus/WAL.zig");
+    _ = @import("core/eventbus/DLQ.zig");
+    _ = @import("core/eventbus/Partitioner.zig");
 
     _ = @import("core/Documentation.zig");
     _ = @import("core/DistributedTransaction.zig");

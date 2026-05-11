@@ -69,7 +69,7 @@ pub const ConsistentHashPartitioner = struct {
         return .{
             .allocator = allocator,
             .config = config,
-            .ring = std.ArrayList(RingEntry).init(allocator),
+            .ring = std.ArrayList(RingEntry).empty,
             .nodes = std.StringHashMap(void).init(allocator),
             .virtual_node_count = config.virtual_nodes_per_node,
         };
@@ -172,7 +172,7 @@ pub const ConsistentHashPartitioner = struct {
         };
 
         const hash = self.hashKey(key);
-        var backups = std.ArrayList([]const u8).init(self.allocator);
+        var backups = std.ArrayList([]const u8).empty;
 
         // Find next N different nodes
         var found: usize = 0;
@@ -208,7 +208,7 @@ pub const ConsistentHashPartitioner = struct {
 
     /// Get all nodes in the ring
     pub fn getNodes(self: *Self) []const []const u8 {
-        var result = std.ArrayList([]const u8).init(self.allocator);
+        var result = std.ArrayList([]const u8).empty;
         var iter = self.nodes.iterator();
         while (iter.next()) |entry| {
             result.append(entry.key_ptr.*) catch continue;
@@ -341,7 +341,7 @@ pub const ConsistentHashPartitioner = struct {
 // Tests
 // ============================================================================
 
-//test "ConsistentHashPartitioner basic routing" {
+test "ConsistentHashPartitioner basic routing" {
     const allocator = std.testing.allocator;
     const config = PartitionerConfig{
         .virtual_nodes_per_node = 10, // Small for testing
@@ -367,7 +367,7 @@ pub const ConsistentHashPartitioner = struct {
     try std.testing.expectEqualStrings(route2.?, route3.?);
 }
 
-//test "ConsistentHashPartitioner uniform distribution" {
+test "ConsistentHashPartitioner uniform distribution" {
     const allocator = std.testing.allocator;
     const config = PartitionerConfig{
         .virtual_nodes_per_node = 50,
@@ -406,7 +406,7 @@ pub const ConsistentHashPartitioner = struct {
     try std.testing.expectEqual(@as(usize, 3), counts.count());
 }
 
-//test "ConsistentHashPartitioner remove node" {
+test "ConsistentHashPartitioner remove node" {
     const allocator = std.testing.allocator;
     var partitioner = ConsistentHashPartitioner.init(allocator, .{ .virtual_nodes_per_node = 10 });
     defer partitioner.deinit();
