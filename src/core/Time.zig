@@ -47,6 +47,27 @@ pub fn monotonicNowSeconds() i64 {
     return @divFloor(monotonicNow(), std.time.ns_per_s);
 }
 
+/// Coarse-grained cached timestamp for hot-path callers that can tolerate ~1s staleness.
+/// Avoids the clock_gettime syscall on every invocation by caching the last read.
+/// Suitable for: TTL expiry checks, rate limiter coarse windows, LRU promotion.
+/// NOT suitable for: circuit breaker timeout precision, sub-second timing.
+var cached_seconds = std.atomic.Value(i64).init(0);
+
+pub fn cachedNowSeconds() i64 {
+    const cached = cached_seconds.load(.monotonic);
+    if (cached > 0) return cached;
+    // First call or cache expired — refresh
+    const now = monotonicNowSeconds();
+    cached_seconds.store(now, .monotonic);
+    return now;
+}
+
+/// Refresh the cached timestamp. Call this periodically (e.g., from a
+/// 1-second timer or event loop tick) to keep cachedNowSeconds() fresh.
+pub fn refreshCache() void {
+    cached_seconds.store(monotonicNowSeconds(), .monotonic);
+}
+
 /// Returns wall-clock seconds via `std.Io` (async-compatible).
 /// Use this when you have access to an `std.Io` instance.
 pub fn wallClockSeconds(io: std.Io) i64 {
@@ -68,4 +89,10 @@ test "monotonicNow is monotonically increasing" {
     const t1 = monotonicNow();
     const t2 = monotonicNow();
     try std.testing.expect(t2 >= t1);
+}
+
+test "cachedNowSeconds returns positive after refresh" {
+    refreshCache();
+    const t = cachedNowSeconds();
+    try std.testing.expect(t > 0);
 }
