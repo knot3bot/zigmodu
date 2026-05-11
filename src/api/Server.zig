@@ -771,15 +771,10 @@ const Router = struct {
     pub fn match(self: *const Router, method: Method, path: []const u8) ?MatchedRoute {
         const root = self.roots.get(method) orelse return null;
 
-        var params = std.StringHashMap([]const u8).init(self.allocator);
-        errdefer {
-            var iter = params.iterator();
-            while (iter.next()) |entry| {
-                self.allocator.free(entry.key_ptr.*);
-                self.allocator.free(entry.value_ptr.*);
-            }
-            params.deinit();
-        }
+        const MAX_PARAMS = 8;
+        var param_keys: [MAX_PARAMS][]const u8 = undefined;
+        var param_vals: [MAX_PARAMS][]const u8 = undefined;
+        var param_count: usize = 0;
 
         var parts = std.mem.splitScalar(u8, path, '/');
         var current = root;
@@ -790,31 +785,44 @@ const Router = struct {
             if (current.findChild(part)) |child| {
                 current = child;
             } else if (current.findParamChild()) |param_child| {
-                const key = self.allocator.dupe(u8, param_child.param_name.?) catch return null;
-                const value = self.allocator.dupe(u8, part) catch {
-                    self.allocator.free(key);
+                if (param_count >= MAX_PARAMS) return null;
+                param_keys[param_count] = self.allocator.dupe(u8, param_child.param_name.?) catch return null;
+                errdefer self.allocator.free(param_keys[param_count]);
+                param_vals[param_count] = self.allocator.dupe(u8, part) catch {
+                    self.allocator.free(param_keys[param_count]);
                     return null;
                 };
-                params.put(key, value) catch {
-                    self.allocator.free(key);
-                    self.allocator.free(value);
-                    return null;
-                };
+                param_count += 1;
                 current = param_child;
             } else {
-                params.deinit();
+                // Free any allocated params on mismatch
+                for (0..param_count) |i| {
+                    self.allocator.free(param_keys[i]);
+                    self.allocator.free(param_vals[i]);
+                }
                 return null;
             }
         }
 
         if (current.route) |route| {
+            // Build HashMap from the fixed-size buffer for API compatibility
+            var params = std.StringHashMap([]const u8).init(self.allocator);
+            for (0..param_count) |i| {
+                params.put(param_keys[i], param_vals[i]) catch {
+                    self.allocator.free(param_keys[i]);
+                    self.allocator.free(param_vals[i]);
+                };
+            }
             return MatchedRoute{
                 .route = route,
                 .params = params,
             };
         }
 
-        params.deinit();
+        for (0..param_count) |i| {
+            self.allocator.free(param_keys[i]);
+            self.allocator.free(param_vals[i]);
+        }
         return null;
     }
 };

@@ -231,6 +231,30 @@ pub fn jwtAuth(secret: []const u8) api.Middleware {
     };
 }
 
+/// CSRF protection using double-submit cookie pattern.
+/// GET/HEAD/OPTIONS requests pass through. State-changing methods (POST/PUT/DELETE/PATCH)
+/// require an X-CSRF-Token header matching the csrf_token cookie.
+pub fn csrf() api.Middleware {
+    return .{
+        .func = struct {
+            fn mw(ctx: *api.Context, next: api.HandlerFn, _: ?*anyopaque) anyerror!void {
+                switch (ctx.method) {
+                    .GET, .HEAD, .OPTIONS => return next(ctx),
+                    else => {
+                        const cookie_token = ctx.header("Cookie") orelse "";
+                        const header_token = ctx.header("X-CSRF-Token") orelse "";
+                        if (!std.mem.eql(u8, cookie_token, header_token) or cookie_token.len == 0) {
+                            try ctx.sendError(403, "CSRF token mismatch");
+                            return;
+                        }
+                        return next(ctx);
+                    },
+                }
+            }
+        }.mw,
+    };
+}
+
 test "cors middleware sets headers" {
     const allocator = std.testing.allocator;
     var ctx = try api.Context.init(allocator, .GET, "/test");
