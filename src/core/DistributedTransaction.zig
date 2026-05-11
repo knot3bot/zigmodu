@@ -324,6 +324,105 @@ pub const TwoPhaseCommit = struct {
     }
 };
 
+/// In-memory append-only transaction log for crash recovery.
+/// Records all transaction lifecycle events so state can be replayed.
+pub const TransactionLog = struct {
+    allocator: std.mem.Allocator,
+    entries: std.ArrayList(LogEntry),
+
+    pub const LogEntry = struct {
+        tx_id: []const u8,
+        event: Event,
+        timestamp: i64,
+    };
+
+    pub const Event = union(enum) {
+        begin: []const u8, // tx_id
+        step_added: StepInfo,
+        commit: []const u8,
+        abort: []const u8,
+        compensate: []const u8,
+
+        pub const StepInfo = struct {
+            tx_id: []const u8,
+            step_name: []const u8,
+            compensation_name: []const u8,
+        };
+    };
+
+    pub fn init(allocator: std.mem.Allocator) TransactionLog {
+        return .{
+            .allocator = allocator,
+            .entries = std.ArrayList(LogEntry).empty,
+        };
+    }
+
+    pub fn deinit(self: *TransactionLog) void {
+        for (self.entries.items) |e| {
+            self.allocator.free(e.tx_id);
+            switch (e.event) {
+                .begin => |id| self.allocator.free(id),
+                .step_added => |s| {
+                    self.allocator.free(s.tx_id);
+                    self.allocator.free(s.step_name);
+                    self.allocator.free(s.compensation_name);
+                },
+                .commit => |id| self.allocator.free(id),
+                .abort => |id| self.allocator.free(id),
+                .compensate => |id| self.allocator.free(id),
+            }
+        }
+        self.entries.deinit(self.allocator);
+    }
+
+    pub fn append(self: *TransactionLog, tx_id: []const u8, event: Event, alloc: std.mem.Allocator) !void {
+        const id_copy = try alloc.dupe(u8, tx_id);
+        const event_copy = switch (event) {
+            .begin => |id| Event{ .begin = try alloc.dupe(u8, id) },
+            .step_added => |s| Event{ .step_added = .{
+                .tx_id = try alloc.dupe(u8, s.tx_id),
+                .step_name = try alloc.dupe(u8, s.step_name),
+                .compensation_name = try alloc.dupe(u8, s.compensation_name),
+            }},
+            .commit => |id| Event{ .commit = try alloc.dupe(u8, id) },
+            .abort => |id| Event{ .abort = try alloc.dupe(u8, id) },
+            .compensate => |id| Event{ .compensate = try alloc.dupe(u8, id) },
+        };
+        try self.entries.append(alloc, .{
+            .tx_id = id_copy,
+            .event = event_copy,
+            .timestamp = @import("Time.zig").monotonicNowSeconds(),
+        });
+    }
+
+    /// Replay the log to recover transaction state after a crash.
+    /// Returns the set of in-flight transaction IDs that were active at crash time.
+    pub fn replay(self: *const TransactionLog, alloc: std.mem.Allocator) ![][]const u8 {
+        var active = std.StringHashMap(void).init(alloc);
+        for (self.entries.items) |e| {
+            switch (e.event) {
+                .begin => {
+                    try active.put(e.tx_id, {});
+                },
+                .commit, .abort, .compensate => {
+                    _ = active.remove(e.tx_id);
+                },
+                .step_added => {}, // no state change
+            }
+        }
+        var result = std.ArrayList([]const u8).empty;
+        var iter = active.iterator();
+        while (iter.next()) |entry| {
+            try result.append(alloc, entry.key_ptr.*);
+        }
+        return result.toOwnedSlice(alloc);
+    }
+
+    pub fn size(self: *const TransactionLog) usize {
+        return self.entries.items.len;
+    }
+};
+
 // ========================================
 // Tests
 // ========================================
@@ -423,4 +522,39 @@ test "TwoPhaseCommit abort" {
     const result = tpc.execute("tx-1");
     try std.testing.expectError(error.TransactionAborted, result);
     try std.testing.expectEqual(TwoPhaseCommit.TransactionCoordinator.TwoPhaseStatus.ABORTED, tpc.coordinators.get("tx-1").?.status);
+}
+
+test "TransactionLog append and replay" {
+    const allocator = std.testing.allocator;
+    var log = TransactionLog.init(allocator);
+    defer log.deinit();
+
+    // Append events
+    try log.append("tx-1", TransactionLog.Event{ .begin = "tx-1" }, allocator);
+    try log.append("tx-2", TransactionLog.Event{ .begin = "tx-2" }, allocator);
+    try log.append("tx-1", TransactionLog.Event{ .commit = "tx-1" }, allocator);
+    try log.append("tx-3", TransactionLog.Event{ .begin = "tx-3" }, allocator);
+
+    try std.testing.expectEqual(@as(usize, 4), log.size());
+
+    // Replay: only tx-2 and tx-3 are in-flight (tx-1 committed)
+    const active = try log.replay(allocator);
+    defer allocator.free(active);
+
+    try std.testing.expectEqual(@as(usize, 2), active.len);
+}
+
+test "TransactionLog abort and compensate" {
+    const allocator = std.testing.allocator;
+    var log = TransactionLog.init(allocator);
+    defer log.deinit();
+
+    try log.append("tx-1", TransactionLog.Event{ .begin = "tx-1" }, allocator);
+    try log.append("tx-1", TransactionLog.Event{ .step_added = .{ .tx_id = "tx-1", .step_name = "reserve", .compensation_name = "release" } }, allocator);
+    try log.append("tx-1", TransactionLog.Event{ .abort = "tx-1" }, allocator);
+
+    // After abort, tx-1 should not be active
+    const active = try log.replay(allocator);
+    defer allocator.free(active);
+    try std.testing.expectEqual(@as(usize, 0), active.len);
 }

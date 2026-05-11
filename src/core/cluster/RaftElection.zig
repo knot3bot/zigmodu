@@ -324,6 +324,21 @@ pub const RaftElection = struct {
     pub fn getState(self: Self) RaftState {
         return self.state;
     }
+
+    /// Total cluster size (self + peers).
+    pub fn clusterSize(self: *const Self) usize {
+        return 1 + self.peers.items.len;
+    }
+
+    /// Quorum = floor(N/2) + 1
+    pub fn quorumSize(self: *const Self) usize {
+        return (self.clusterSize() / 2) + 1;
+    }
+
+    /// Check if votes received meet quorum.
+    pub fn hasQuorum(self: *const Self, votes_received: usize) bool {
+        return votes_received >= self.quorumSize();
+    }
 };
 
 // ============================================================================
@@ -491,4 +506,24 @@ test "RaftElection split vote across three candidates" {
     };
     const resp = try e2.handleVoteRequest(req);
     try std.testing.expect(resp.vote_granted);
+}
+
+test "RaftElection quorum calculation" {
+    const allocator = std.testing.allocator;
+    // 3-node cluster: quorum = 2
+    var e = try RaftElection.init(allocator, "n1", 3);
+    defer e.deinit();
+    try e.addPeer("n2");
+    try e.addPeer("n3");
+
+    try std.testing.expectEqual(@as(usize, 3), e.clusterSize());
+    try std.testing.expectEqual(@as(usize, 2), e.quorumSize());
+    try std.testing.expect(e.hasQuorum(2));
+    try std.testing.expect(!e.hasQuorum(1));
+
+    // 5-node cluster: quorum = 3
+    var e2 = try RaftElection.init(allocator, "n1", 5);
+    defer e2.deinit();
+    try std.testing.expectEqual(@as(usize, 1), e2.clusterSize()); // just self
+    try std.testing.expectEqual(@as(usize, 1), e2.quorumSize()); // (1/2)+1 = 1
 }
