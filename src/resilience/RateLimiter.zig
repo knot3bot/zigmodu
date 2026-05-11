@@ -289,3 +289,20 @@ test "SlidingWindowRateLimiter" {
     // Note: Blocking sleep unavailable in Zig 0.16.0 - test validates sync behavior
     _ = {};
 }
+
+test "RateLimiter burst and refill" {
+    const allocator = std.testing.allocator;
+    var limiter = try RateLimiter.init(allocator, "burst", 5, 1); // 5 tokens, refill 1/sec
+    defer limiter.deinit();
+
+    // Burst: consume all 5 tokens rapidly
+    var allowed: u32 = 0;
+    for (0..10) |_| {
+        if (limiter.tryAcquire()) allowed += 1;
+    }
+    try std.testing.expectEqual(@as(u32, 5), allowed); // exactly 5 allowed
+
+    // After burst, no more tokens available
+    try std.testing.expect(!limiter.tryAcquire());
+    try std.testing.expectEqual(@as(u32, 0), limiter.availableTokens());
+}
