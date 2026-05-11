@@ -52,10 +52,11 @@ jobs:
         run: |
           ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-${{ matrix.arch }}-${{ matrix.platform }}-${ZIG_VERSION}.tar.xz"
           echo "Downloading Zig from $ZIG_URL"
-          curl -fsSL "$ZIG_URL" -o zig.tar.xz
-          mkdir -p "$HOME/zig"
-          tar -xf zig.tar.xz -C "$HOME/zig" --strip-components=1
-          echo "$HOME/zig" >> $GITHUB_PATH
+          curl -fsSL "$ZIG_URL" -o zig.tar.xz || { echo "Download failed"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xf zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1 || { echo "Extract failed"; exit 1; }
+          echo "$RUNNER_TEMP/zig" >> $GITHUB_PATH
+          export PATH="$RUNNER_TEMP/zig:$PATH"
           zig version
 
       - name: Build zmodu
