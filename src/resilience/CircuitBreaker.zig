@@ -323,3 +323,27 @@ test "CircuitBreakerRegistry" {
     try std.testing.expect(registry.remove("api"));
     try std.testing.expect(registry.get("api") == null);
 }
+
+test "CircuitBreaker OPEN to HALF_OPEN via timeout" {
+    const allocator = std.testing.allocator;
+
+    var cb = try CircuitBreaker.init(allocator, "test-hc", .{
+        .failure_threshold = 1,
+        .success_threshold = 2,
+        .timeout_seconds = 0,
+        .half_open_max_calls = 10,
+    });
+    defer cb.deinit();
+
+    // Force OPEN with 0 timestamp
+    cb.forceOpen();
+    try std.testing.expectEqual(CircuitBreaker.State.OPEN, cb.state);
+
+    // getState() calls updateState(), which triggers OPEN->HALF_OPEN with timeout=0
+    const state = cb.getState();
+    try std.testing.expectEqual(CircuitBreaker.State.HALF_OPEN, state);
+
+    // Reset to CLOSED
+    cb.reset();
+    try std.testing.expectEqual(CircuitBreaker.State.CLOSED, cb.state);
+}

@@ -15,15 +15,22 @@ pub const Method = enum {
     HEAD,
     OPTIONS,
 
+    /// Parse HTTP method from string. Uses first-char dispatch for O(1) fast path.
     pub fn fromString(s: []const u8) Method {
-        if (std.mem.eql(u8, s, "GET")) return .GET;
-        if (std.mem.eql(u8, s, "POST")) return .POST;
-        if (std.mem.eql(u8, s, "PUT")) return .PUT;
-        if (std.mem.eql(u8, s, "DELETE")) return .DELETE;
-        if (std.mem.eql(u8, s, "PATCH")) return .PATCH;
-        if (std.mem.eql(u8, s, "HEAD")) return .HEAD;
-        if (std.mem.eql(u8, s, "OPTIONS")) return .OPTIONS;
-        return .GET;
+        if (s.len == 0) return .GET;
+        return switch (s[0]) {
+            'G' => if (s.len == 3 and s[1] == 'E' and s[2] == 'T') .GET else .GET,
+            'P' => if (s.len >= 3) switch (s[1]) {
+                'O' => if (s.len == 4 and s[2] == 'S' and s[3] == 'T') .POST else .GET,
+                'U' => if (s.len == 3 and s[2] == 'T') .PUT else .GET,
+                'A' => if (s.len == 5 and s[2] == 'T' and s[3] == 'C' and s[4] == 'H') .PATCH else .GET,
+                else => .GET,
+            } else .GET,
+            'D' => if (s.len == 6 and s[1] == 'E' and s[2] == 'L' and s[3] == 'E' and s[4] == 'T' and s[5] == 'E') .DELETE else .GET,
+            'H' => if (s.len == 4 and s[1] == 'E' and s[2] == 'A' and s[3] == 'D') .HEAD else .GET,
+            'O' => if (s.len == 7 and s[1] == 'P' and s[2] == 'T' and s[3] == 'I' and s[4] == 'O' and s[5] == 'N' and s[6] == 'S') .OPTIONS else .GET,
+            else => .GET,
+        };
     }
 
     pub fn toString(self: Method) []const u8 {

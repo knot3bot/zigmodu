@@ -202,6 +202,11 @@ pub fn ThreadSafeEventBus(comptime T: type) type {
             self.bus.unsubscribe(listener);
         }
 
+        /// Publish an event to all subscribers.
+        ///
+        /// NOTE: The mutex is held for the duration of all listener callbacks.
+        /// Keep listener handlers short (non-blocking). For long-running work,
+        /// have listeners enqueue to a worker instead of processing inline.
         pub fn publish(self: *Self, event: T) void {
             self.mu.lock();
             defer self.mu.unlock();
@@ -241,4 +246,37 @@ test "TypedEventBus subscribe publish unsubscribe" {
 
     bus.unsubscribe(Ctx.cb);
     try std.testing.expectEqual(@as(usize, 0), bus.subscriberCount());
+}
+
+test "TypedEventBus multi-subscriber" {
+    const allocator = std.testing.allocator;
+    const Event = struct { value: i32 };
+
+    var bus = TypedEventBus(Event).init(allocator);
+    defer bus.deinit();
+
+    const Ctx = struct {
+        var sum: i32 = 0;
+        fn cb1(event: Event) void { sum += event.value; }
+        fn cb2(event: Event) void { sum += event.value * 2; }
+        fn cb3(event: Event) void { sum += event.value * 3; }
+    };
+
+    try bus.subscribe(Ctx.cb1);
+    try bus.subscribe(Ctx.cb2);
+    try bus.subscribe(Ctx.cb3);
+    try std.testing.expectEqual(@as(usize, 3), bus.subscriberCount());
+
+    Ctx.sum = 0;
+    bus.publish(.{ .value = 10 });
+    // cb1 + cb2 + cb3 = 10 + 20 + 30 = 60
+    try std.testing.expectEqual(@as(i32, 60), Ctx.sum);
+
+    bus.unsubscribe(Ctx.cb2);
+    try std.testing.expectEqual(@as(usize, 2), bus.subscriberCount());
+
+    Ctx.sum = 0;
+    bus.publish(.{ .value = 5 });
+    // cb1 + cb3 = 5 + 15 = 20
+    try std.testing.expectEqual(@as(i32, 20), Ctx.sum);
 }
