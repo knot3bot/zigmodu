@@ -1,7 +1,19 @@
-//! SQL client abstraction for zigzero
-//!
-//! Aligned with go-zero's core/stores/sqlx package.
+//! SQL client abstraction — aligned with go-zero's core/stores/sqlx.
 //! Supports SQLite, PostgreSQL, and MySQL via C bindings.
+//!
+//! STRUCTURE (planned split, currently one file):
+//!   §1  Types        — Value, Row, Rows, ExecResult, Driver, Conn, Stmt   (~200L)
+//!   §2  SQLiteConn   — SQLite connection + VTable                          (~160L)
+//!   §3  PostgresConn — PostgreSQL connection + VTable                      (~240L)
+//!   §4  MySqlConn    — MySQL connection + VTable                           (~110L)
+//!   §5  PreparedStmt — SQLiteStmt, PostgresStmt, MySqlStmt                 (~270L)
+//!   §6  ConnPool     — Connection pool with circuit breaker                (~150L)
+//!   §7  Client       — Main client (init, query, exec, tx)                 (~500L)
+//!   §8  Transaction  — Transaction with rollback/savepoint                 (~100L)
+//!   §9  ORM Helpers  — Row scanning utilities                              (~100L)
+//!   §10 Tests        — ~40 test functions                                  (~900L)
+//!
+//! TODO: extract §§1-6,8 into sqlx/{types,conn,pool,pg,mysql,sqlite,tx}.zig
 
 const std = @import("std");
 const builtin = @import("builtin");
