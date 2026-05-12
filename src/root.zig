@@ -26,6 +26,8 @@ pub const ZigModuError = @import("core/Error.zig").ZigModuError;
 pub const ErrorContext = @import("core/Error.zig").ErrorContext;
 pub const ErrorHandler = @import("core/Error.zig").ErrorHandler;
 pub const Result = @import("core/Error.zig").Result;
+pub const HttpCode = @import("core/Error.zig").HttpCode;
+pub const HealthEndpoint = @import("core/HealthEndpoint.zig").HealthEndpoint;
 
 pub const ModuleInfo = @import("core/Module.zig").ModuleInfo;
 pub const ApplicationModules = @import("core/Module.zig").ApplicationModules;

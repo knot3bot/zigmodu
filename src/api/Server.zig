@@ -935,35 +935,40 @@ pub const Server = struct {
     name: []const u8,
     running: std.atomic.Value(bool),
     listener: ?std.Io.net.Server,
-    /// Guards exactly-once ownership transfer of `listener` fd close between
-    /// `start()`'s defer and `stop()`. Whichever path first swaps this to
-    /// `true` takes ownership of calling `deinit` on the listener.
     listener_closing: std.atomic.Value(bool),
-    /// Group of in-flight connection fibers. `start()` owns this: it spawns
-    /// `connFiber` tasks into the group and awaits it on shutdown so no
-    /// fiber futures leak when the accept loop exits.
     conn_group: std.Io.Group,
     max_body_size: usize,
     request_timeout_ms: u32,
     max_requests_per_conn: usize,
-    /// Optional: pointer to Application.in_flight_requests for graceful drain.
     in_flight: ?*std.atomic.Value(u64) = null,
 
+    pub const Config = struct {
+        port: u16 = 8080,
+        name: []const u8 = "zigmodu-api",
+        max_body_size: usize = 8 * 1024 * 1024,
+        request_timeout_ms: u32 = 30000,
+        max_requests_per_conn: usize = 100,
+    };
+
     pub fn init(io: std.Io, allocator: std.mem.Allocator, port: u16) Server {
+        return Server.initWithConfig(io, allocator, .{ .port = port });
+    }
+
+    pub fn initWithConfig(io: std.Io, allocator: std.mem.Allocator, config: Config) Server {
         return .{
             .io = io,
             .allocator = allocator,
-            .port = port,
+            .port = config.port,
             .router = Router.init(allocator),
             .global_middleware = std.ArrayList(Middleware).empty,
-            .name = "zigmodu-api",
+            .name = config.name,
             .running = std.atomic.Value(bool).init(false),
             .listener = null,
             .listener_closing = std.atomic.Value(bool).init(false),
             .conn_group = .init,
-            .max_body_size = 8 * 1024 * 1024, // 8MB default
-            .request_timeout_ms = 30000, // 30s default
-            .max_requests_per_conn = 100,
+            .max_body_size = config.max_body_size,
+            .request_timeout_ms = config.request_timeout_ms,
+            .max_requests_per_conn = config.max_requests_per_conn,
         };
     }
 

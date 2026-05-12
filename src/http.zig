@@ -1,7 +1,17 @@
 //! HTTP domain: server, middleware, client, OpenAPI, utilities.
-//! Import directly for fast compilation: `const http = @import("zigmodu").http;`
+//! Import directly: `const http = @import("zigmodu").http;`
+//!
+//! Top-level aliases for common types:
+//!   http.Server, http.Context, http.RouteGroup, http.Middleware
 
 pub const http_server = @import("api/Server.zig");
+pub const Server = @import("api/Server.zig").Server;
+pub const Context = @import("api/Server.zig").Context;
+pub const RouteGroup = @import("api/Server.zig").RouteGroup;
+pub const Route = @import("api/Server.zig").Route;
+pub const Middleware = @import("api/Server.zig").Middleware;
+pub const HandlerFn = @import("api/Server.zig").HandlerFn;
+pub const Method = @import("api/Server.zig").Method;
 pub const RouteInfo = @import("api/Server.zig").RouteInfo;
 pub const http_middleware = @import("api/Middleware.zig");
 pub const tracing_middleware = @import("api/middleware/Tracing.zig");
