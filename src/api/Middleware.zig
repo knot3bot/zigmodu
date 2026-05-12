@@ -41,7 +41,10 @@ pub fn cors(config: CorsConfig) api.Middleware {
                     origin_allowed = true; // Same-origin request
                 } else {
                     for (cfg.allow_origins) |allowed| {
-                        if (std.mem.eql(u8, allowed, "*") or std.mem.eql(u8, allowed, origin)) {
+                        const matched = if (std.mem.eql(u8, allowed, "*")) true
+                            else if (std.mem.startsWith(u8, allowed, "*.")) std.mem.endsWith(u8, origin, allowed[1..])
+                            else std.mem.eql(u8, allowed, origin);
+                        if (matched) {
                             origin_allowed = true;
                             break;
                         }

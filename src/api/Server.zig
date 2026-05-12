@@ -742,15 +742,18 @@ const TrieNode = struct {
 const Router = struct {
     allocator: std.mem.Allocator,
     roots: std.AutoHashMap(Method, *TrieNode),
+    wildcards: std.AutoHashMap(Method, Route),
 
     pub fn init(allocator: std.mem.Allocator) Router {
         return .{
             .allocator = allocator,
             .roots = std.AutoHashMap(Method, *TrieNode).init(allocator),
+            .wildcards = std.AutoHashMap(Method, Route).init(allocator),
         };
     }
 
     pub fn deinit(self: *Router) void {
+        self.wildcards.deinit();
         var iter = self.roots.valueIterator();
         while (iter.next()) |root| {
             root.*.deinit(self.allocator);
@@ -759,6 +762,15 @@ const Router = struct {
     }
 
     pub fn addRoute(self: *Router, route: Route) !void {
+        // Wildcard route: catch-all for any path under this method
+        if (std.mem.eql(u8, route.path, "*")) {
+            const path_copy = try self.allocator.dupe(u8, route.path);
+            var r = route;
+            r.path = path_copy;
+            try self.wildcards.put(route.method, r);
+            return;
+        }
+
         const root = try self.getOrCreateRoot(route.method);
 
         var parts = std.mem.splitScalar(u8, route.path, '/');
@@ -858,6 +870,10 @@ const Router = struct {
         for (0..param_count) |i| {
             self.allocator.free(param_keys[i]);
             self.allocator.free(param_vals[i]);
+        }
+        // Wildcard fallback: catch-all * route
+        if (self.wildcards.get(method)) |wc| {
+            return MatchedRoute{ .route = wc, .params = std.StringHashMap([]const u8).init(self.allocator) };
         }
         return null;
     }
@@ -1071,6 +1087,7 @@ pub const Server = struct {
     pub fn stop(self: *Server) void {
         self.running.store(false, .monotonic);
         self.closeListener();
+        self.listener_closing.store(false, .monotonic); // allow restart
     }
 
     /// Start the server in a background thread. Returns immediately.

@@ -154,13 +154,6 @@ pub const Contract = @import("test/ContractTest.zig").Contract;
 pub const ContractVerificationResult = @import("test/ContractTest.zig").ContractVerificationResult;
 
 // ============================================================
-// 11. DEPRECATED — Legacy APIs (will be removed)
-// ============================================================
-pub const App = @import("api/Simplified.zig").App;
-pub const Module = @import("api/Simplified.zig").Module;
-pub const ModuleImpl = @import("api/Simplified.zig").ModuleImpl;
-// extensions namespace removed — use domain files: zigmodu.http, zigmodu.data, etc.
-
 // ============================================================
 // TESTS
 // ============================================================
