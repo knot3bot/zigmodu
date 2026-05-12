@@ -276,7 +276,8 @@ pub const ConsistentHashPartitioner = struct {
         var k2: u64 = 0;
         const remaining = len % 8;
         if (remaining > 0) {
-            @memcpy(@as(*u8, @ptrFromInt(@intFromPtr(&k2))), key[i..i+remaining]);
+            const dest: [*]u8 = @ptrCast(&k2);
+            @memcpy(dest[0..remaining], key[i..][0..remaining]);
         }
 
         h ^= @as(u64, remaining);

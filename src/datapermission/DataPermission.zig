@@ -102,7 +102,7 @@ test "DataPermissionContext init and default" {
     const allocator = std.testing.allocator;
     var ctx = DataPermissionContext.init(allocator);
     defer ctx.deinit();
-    try std.testing.expect(!ctx.is_admin);
+    try std.testing.expectEqual(Rbac.DataScope.self_, ctx.scope);
     try std.testing.expectEqual(@as(i64, 0), ctx.user_id);
 }
 
@@ -112,9 +112,9 @@ test "DataPermissionFilter buildWhere" {
     defer ctx.deinit();
     ctx.user_id = 42;
 
-    const filter = DataPermissionFilter{ .column = "user_id", .scope = .self_ };
-    const where = try filter.buildWhere(allocator, ctx);
-    defer allocator.free(where);
-    try std.testing.expect(where.len > 0);
+    const where = ctx.buildWhere(allocator, "dept_id", "user_id") orelse return error.UnexpectedNull;
+    defer allocator.free(where.clause);
+    defer allocator.free(where.params);
+    try std.testing.expect(where.clause.len > 0);
 }
 

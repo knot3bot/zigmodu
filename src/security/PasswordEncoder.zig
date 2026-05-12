@@ -76,8 +76,8 @@ pub const PasswordEncoder = struct {
         ) catch return false;
 
         // Constant-time comparison to prevent timing side-channel
-        if (expected_hash.len != derived_key.len) return false;
-        return std.crypto.timing_safe.eql(u8, derived_key[0..], expected_hash[0..derived_key.len]);
+        if (expected_hash.len < derived_key.len) return false;
+        return timingSafeSliceEql(derived_key[0..], expected_hash[0..derived_key.len]);
     }
 
     pub fn needsUpgrade(self: *PasswordEncoder, encoded_hash: []const u8) bool {
@@ -89,6 +89,19 @@ pub const PasswordEncoder = struct {
         return iterations < self.iterations;
     }
 };
+
+/// 常量时间切片比较 (Zig 0.16 timing_safe.eql 只接受数组/向量)
+fn timingSafeSliceEql(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var acc: u8 = 0;
+    for (a, 0..) |x, i| {
+        acc |= x ^ b[i];
+    }
+    const s = @typeInfo(u8).int.bits;
+    const Cu = std.meta.Int(.unsigned, s);
+    const Cext = std.meta.Int(.unsigned, s + 1);
+    return @as(bool, @bitCast(@as(u1, @truncate((@as(Cext, @as(Cu, @bitCast(acc))) -% 1) >> s))));
+}
 
 fn base64Encode(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
     const encoder = std.base64.standard.Encoder;

@@ -136,8 +136,8 @@ pub const SecurityModule = struct {
         defer self.allocator.free(expected_signature);
 
         // Constant-time comparison to prevent timing side-channel
-        if (signature.len != expected_signature.len or
-            !std.crypto.timing_safe.eql(u8, signature, expected_signature[0..signature.len]))
+        if (signature.len > expected_signature.len or
+            !timingSafeSliceEql(signature, expected_signature[0..signature.len]))
         {
             return error.InvalidSignature;
         }
@@ -254,8 +254,7 @@ pub const SecurityModule = struct {
         defer self.allocator.free(hash_b64);
 
         // Constant-time comparison to prevent timing side-channel
-        if (hash_b64.len != expected_hash_b64.len) return false;
-        return std.crypto.timing_safe.eql(u8, hash_b64, expected_hash_b64);
+        return timingSafeSliceEql(hash_b64, expected_hash_b64);
     }
 
     /// 检查角色权限
@@ -288,6 +287,19 @@ pub const SecurityModule = struct {
         return true;
     }
 };
+
+/// 常量时间切片比较 (Zig 0.16 timing_safe.eql 只接受数组/向量)
+fn timingSafeSliceEql(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var acc: u8 = 0;
+    for (a, 0..) |x, i| {
+        acc |= x ^ b[i];
+    }
+    const s = @typeInfo(u8).int.bits;
+    const Cu = std.meta.Int(.unsigned, s);
+    const Cext = std.meta.Int(.unsigned, s + 1);
+    return @as(bool, @bitCast(@as(u1, @truncate((@as(Cext, @as(Cu, @bitCast(acc))) -% 1) >> s))));
+}
 
 /// Base64 URL 编码 (JWT 标准)
 fn base64UrlEncode(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {

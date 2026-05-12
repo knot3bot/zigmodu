@@ -146,7 +146,7 @@ pub const DLQ = struct {
                     // Remove oldest entry
                     _ = s.entries.orderedRemove(0);
                 }
-                try s.entries.append(entry);
+                try s.entries.append(self.allocator, entry);
             },
             .sqlite => |*s| {
                 // In full implementation, would insert into SQLite

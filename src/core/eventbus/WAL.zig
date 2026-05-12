@@ -55,7 +55,7 @@ pub const WAL = struct {
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, config: WALConfig) !Self {
         // Ensure directory exists
-        std.Io.Dir.cwd(io).createDirPath(io, config.dir_path) catch |err| {
+        std.Io.Dir.cwd().createDirPath(io, config.dir_path) catch |err| {
             if (err != error.PathAlreadyExists) return err;
         };
 
@@ -97,8 +97,7 @@ pub const WAL = struct {
         defer buffer.deinit(self.allocator);
         try serializeEntry(entry, seq, self.allocator, &buffer);
 
-        _ = try self.current_segment.file.seekTo(self.io, self.current_segment.size_bytes);
-        _ = try self.current_segment.file.writeStreamingAll(self.io, buffer.items);
+        try self.current_segment.file.writePositionalAll(self.io, buffer.items, self.current_segment.size_bytes);
         self.current_segment.end_index = seq;
         self.current_segment.size_bytes +%= buffer.items.len;
 
@@ -142,7 +141,7 @@ pub const WAL = struct {
             if (oldest.end_index >= before_seq) break;
             if (oldest == self.current_segment) break;
             try removeSegment(self.allocator, self.io, oldest);
-            _ = self.segments.orderedRemove(self.allocator, 0);
+            _ = self.segments.orderedRemove(0);
             removed += 1;
         }
         return removed;
@@ -160,7 +159,7 @@ pub const WAL = struct {
         self.current_segment = new_seg;
 
         while (self.config.max_segments > 0 and self.segments.items.len >= self.config.max_segments) {
-            const oldest = self.segments.orderedRemove(self.allocator, 0);
+            const oldest = self.segments.orderedRemove(0);
             try removeSegment(self.allocator, self.io, oldest);
         }
     }
@@ -172,7 +171,7 @@ fn createSegment(allocator: std.mem.Allocator, io: std.Io, dir: []const u8, id: 
     const path = try std.fmt.allocPrint(allocator, "{s}/{:0>20}.wal", .{ dir, id });
     errdefer allocator.free(path);
 
-    const file = try std.Io.Dir.cwd(io).createFile(io, path, .{ .truncate = false, .read = true });
+    const file = try std.Io.Dir.cwd().createFile(io, path, .{ .truncate = false, .read = true });
     errdefer file.close(io);
 
     const seg = try allocator.create(WAL.Segment);
@@ -182,19 +181,21 @@ fn createSegment(allocator: std.mem.Allocator, io: std.Io, dir: []const u8, id: 
 
 fn removeSegment(allocator: std.mem.Allocator, io: std.Io, seg: *WAL.Segment) !void {
     seg.file.close(io);
-    std.Io.Dir.cwd(io).deleteFile(io, seg.path) catch {};
+    std.Io.Dir.cwd().deleteFile(io, seg.path) catch {};
     allocator.free(seg.path);
     allocator.destroy(seg);
 }
 
-/// Packed binary header for WAL entries (28 bytes). Zig 0.16 packed struct
-/// replaces manual writeInt calls with a single @bitCast copy.
+/// Packed binary header for WAL entries (32 bytes with padding).
+/// Zig 0.16 @sizeOf rounds packed structs to ABI alignment (8 bytes),
+/// so we pad to 32 bytes for @bitCast compatibility.
 const WALEntryHeader = packed struct {
     seq: u64,
     timestamp_ms: i64,
     topic_len: u32,
     payload_len: u32,
     source_len: u32,
+    _pad: u32 = 0,
 };
 
 fn serializeEntry(entry: WALEntry, seq: u64, alloc: std.mem.Allocator, buf: *std.ArrayList(u8)) !void {

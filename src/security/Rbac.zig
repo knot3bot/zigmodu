@@ -129,7 +129,7 @@ pub const AuthInfo = struct {
     tenant_id: i64,
     username: []const u8,
     role_ids: []const i64,
-    permissions: std.StringHashMap(bool) = .{},
+    permissions: std.StringHashMap(bool),
 
     pub fn deinit(self: *AuthInfo, allocator: std.mem.Allocator) void {
         allocator.free(self.username);
@@ -138,7 +138,7 @@ pub const AuthInfo = struct {
         while (it.next()) |entry| {
             allocator.free(entry.key_ptr.*);
         }
-        self.permissions.deinit(allocator);
+        self.permissions.deinit();
     }
 
     pub fn hasPermission(self: *const AuthInfo, perm: []const u8) bool {
@@ -172,10 +172,10 @@ pub const RbacEngine = struct {
 
     /// 从扁平菜单列表构建权限集合
     pub fn buildPermissionSet(allocator: std.mem.Allocator, menus: []const Menu) !std.StringHashMap(bool) {
-        var set: std.StringHashMap(bool) = .{};
+        var set = std.StringHashMap(bool).init(allocator);
         for (menus) |menu| {
             if (menu.permission.len > 0) {
-                try set.put(allocator, menu.permission, true);
+                try set.put(menu.permission, true);
             }
         }
         return set;
@@ -309,7 +309,7 @@ test "AuthInfo hasPermission" {
         .tenant_id = 1,
         .username = "test",
         .role_ids = &.{},
-        .permissions = .{},
+        .permissions = std.StringHashMap(bool).init(allocator),
     };
 
     // Empty permissions: always deny
@@ -318,8 +318,8 @@ test "AuthInfo hasPermission" {
     try std.testing.expect(auth.hasAllPermissions(&.{})); // empty set: trivially true
 
     // Add permissions
-    try auth.permissions.put(allocator, try allocator.dupe(u8, "read"), true);
-    try auth.permissions.put(allocator, try allocator.dupe(u8, "write"), true);
+    try auth.permissions.put(try allocator.dupe(u8, "read"), true);
+    try auth.permissions.put(try allocator.dupe(u8, "write"), true);
 
     try std.testing.expect(auth.hasPermission("read"));
     try std.testing.expect(!auth.hasPermission("delete"));
@@ -337,9 +337,9 @@ test "DataScope fromInt" {
 }
 
 test "Menu isDir isMenu isButton" {
-    const menu = Menu{ .menu_type = .dir };
-    const item = Menu{ .menu_type = .menu };
-    const btn = Menu{ .menu_type = .button };
+    const menu = Menu{ .menu_type = .dir, .id = 0, .name = "", .permission = "", .sort = 0, .parent_id = 0, .path = "", .icon = "", .component = "", .component_name = "", .status = 0, .visible = false, .keep_alive = false, .always_show = false };
+    const item = Menu{ .menu_type = .menu, .id = 0, .name = "", .permission = "", .sort = 0, .parent_id = 0, .path = "", .icon = "", .component = "", .component_name = "", .status = 0, .visible = false, .keep_alive = false, .always_show = false };
+    const btn = Menu{ .menu_type = .button, .id = 0, .name = "", .permission = "", .sort = 0, .parent_id = 0, .path = "", .icon = "", .component = "", .component_name = "", .status = 0, .visible = false, .keep_alive = false, .always_show = false };
 
     try std.testing.expect(menu.isDir());
     try std.testing.expect(!menu.isButton());
