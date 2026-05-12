@@ -1072,6 +1072,35 @@ pub const Server = struct {
         self.closeListener();
     }
 
+    /// Start the server in a background thread. Returns immediately.
+    /// Call stop() to shut down. Use this when you need to start multiple
+    /// services (HTTP + gRPC + cluster) in the same process.
+    pub fn runInBackground(self: *Server) !std.Thread {
+        self.running.store(true, .monotonic);
+        const handle = try std.Thread.spawn(.{}, runLoop, .{self});
+        return handle;
+    }
+
+    fn runLoop(self: *Server) void {
+        self.start() catch |err| {
+            std.log.err("[Server] Background accept loop failed: {}", .{err});
+        };
+    }
+
+    /// Factory: create a Server from environment variables.
+    /// Reads HTTP_PORT (default 8080), HTTP_MAX_BODY (default 8MB).
+    pub fn fromEnv(io: std.Io, allocator: std.mem.Allocator) !Server {
+        const port = if (std.process.getEnvVarOwned(allocator, "HTTP_PORT")) |p| blk: {
+            defer allocator.free(p);
+            break :blk std.fmt.parseInt(u16, p, 10) catch 8080;
+        } else @as(u16, 8080);
+        const max_body = if (std.process.getEnvVarOwned(allocator, "HTTP_MAX_BODY")) |b| blk: {
+            defer allocator.free(b);
+            break :blk std.fmt.parseInt(usize, b, 10) catch 8 * 1024 * 1024;
+        } else @as(usize, 8 * 1024 * 1024);
+        return initWithConfig(io, allocator, .{ .port = port, .max_body_size = max_body });
+    }
+
     /// Close the listener exactly once, whichever caller wins the race.
     fn closeListener(self: *Server) void {
         if (self.listener_closing.swap(true, .acq_rel)) return;

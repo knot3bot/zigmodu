@@ -33,7 +33,9 @@ pub const ModuleInfo = @import("core/Module.zig").ModuleInfo;
 pub const ApplicationModules = @import("core/Module.zig").ApplicationModules;
 pub const scanModules = @import("core/ModuleScanner.zig").scanModules;
 pub const validateModules = @import("core/ModuleValidator.zig").validateModules;
+/// DEPRECATED: use Application.start() / Application.stop() instead.
 pub const startAll = @import("core/Lifecycle.zig").startAll;
+/// DEPRECATED: use Application.start() / Application.stop() instead.
 pub const stopAll = @import("core/Lifecycle.zig").stopAll;
 pub const generateDocs = @import("core/Documentation.zig").generateDocs;
 pub const Documentation = @import("core/Documentation.zig");
