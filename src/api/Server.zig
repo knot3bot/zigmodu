@@ -1868,3 +1868,29 @@ test "deepCopy strings escape arena lifetime" {
     try std.testing.expectEqual(@as(i32, 25), outer_copy.inner.age);
     try std.testing.expectEqualStrings("test", outer_copy.label);
 }
+
+test "queryInt returns default on missing param" {
+    const allocator = std.testing.allocator;
+    var ctx = try Context.init(allocator, .GET, "/test");
+    defer ctx.deinit();
+
+    try std.testing.expectEqual(@as(i64, 0), ctx.queryInt("page", 0));
+    try std.testing.expectEqual(@as(i64, 10), ctx.queryInt("size", 10));
+}
+
+test "queryInt parses valid integer" {
+    const allocator = std.testing.allocator;
+    var ctx = try Context.init(allocator, .GET, "/test?page=5&size=20");
+    defer ctx.deinit();
+
+    const qk = try allocator.dupe(u8, "page");
+    const qv = try allocator.dupe(u8, "5");
+    try ctx.query.put(qk, qv);
+    const sk = try allocator.dupe(u8, "size");
+    const sv = try allocator.dupe(u8, "20");
+    try ctx.query.put(sk, sv);
+
+    try std.testing.expectEqual(@as(i64, 5), ctx.queryInt("page", 0));
+    try std.testing.expectEqual(@as(i64, 20), ctx.queryInt("size", 10));
+    try std.testing.expectEqual(@as(i64, 42), ctx.queryInt("missing", 42));
+}
