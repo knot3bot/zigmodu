@@ -146,7 +146,7 @@ pub const Context = struct {
     query: std.StringHashMap([]const u8),
     params: std.StringHashMap([]const u8),
     headers: std.StringHashMap([]const u8),
-    form: std.StringHashMap([]const u8),
+    form: ?std.StringHashMap([]const u8) = null,
     body: ?[]const u8 = null,
     response_body: std.ArrayList(u8),
     status_code: u16 = 200,
@@ -171,7 +171,6 @@ pub const Context = struct {
             .query = std.StringHashMap([]const u8).init(allocator),
             .params = std.StringHashMap([]const u8).init(allocator),
             .headers = std.StringHashMap([]const u8).init(allocator),
-            .form = std.StringHashMap([]const u8).init(allocator),
             .response_body = std.ArrayList(u8).empty,
             .response_headers = std.StringHashMap([]const u8).init(allocator),
         };
@@ -199,12 +198,14 @@ pub const Context = struct {
         }
         self.headers.deinit();
 
-        var form_iter = self.form.iterator();
-        while (form_iter.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.*);
+        if (self.form) |*f| {
+            var form_iter = f.iterator();
+            while (form_iter.next()) |entry| {
+                self.allocator.free(entry.key_ptr.*);
+                self.allocator.free(entry.value_ptr.*);
+            }
+            f.deinit();
         }
-        self.form.deinit();
 
         self.response_body.deinit(self.allocator);
 
@@ -248,7 +249,7 @@ pub const Context = struct {
 
     /// Get form value
     pub fn formValue(self: *const Context, key: []const u8) ?[]const u8 {
-        return self.form.get(key);
+        return if (self.form) |f| f.get(key) else null;
     }
 
     /// Set response header
@@ -432,7 +433,7 @@ pub const Context = struct {
             const value_str: ?[]const u8 = switch (source) {
                 .path => self.params.get(field.name),
                 .query => self.query.get(field.name),
-                .form => self.form.get(field.name),
+                .form => if (self.form) |f| f.get(field.name) else null,
                 .header => self.headers.get(field.name),
             };
 
@@ -1222,7 +1223,7 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
             _ = ct;
             const ctype = request.headers.get("Content-Type") orelse "";
             if (std.mem.startsWith(u8, ctype, "application/x-www-form-urlencoded")) {
-                ctx.form = parseFormBody(arena_alloc, body) catch ctx.form;
+                ctx.form = parseFormBody(arena_alloc, body) catch null;
             }
         }
 
