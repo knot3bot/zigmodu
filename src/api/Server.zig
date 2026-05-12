@@ -1202,21 +1202,16 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
         };
         defer ctx.deinit();
 
-        // Copy query params
-        var qiter = request.query.iterator();
-        while (qiter.next()) |entry| {
-            const key = arena_alloc.dupe(u8, entry.key_ptr.*) catch continue;
-            const val = arena_alloc.dupe(u8, entry.value_ptr.*) catch continue;
-            ctx.query.put(key, val) catch {};
-        }
+        // Transfer ownership: steal query/headers HashMaps from request
+        // to avoid re-duplicating every key-value pair (saves ~10 allocs/req).
+        // Both use arena_alloc so lifetimes are consistent.
+        ctx.query.deinit();
+        ctx.query = request.query;
+        request.query = std.StringHashMap([]const u8).init(arena_alloc);
 
-        // Copy headers
-        var hiter = request.headers.iterator();
-        while (hiter.next()) |entry| {
-            const key = arena_alloc.dupe(u8, entry.key_ptr.*) catch continue;
-            const val = arena_alloc.dupe(u8, entry.value_ptr.*) catch continue;
-            ctx.headers.put(key, val) catch {};
-        }
+        ctx.headers.deinit();
+        ctx.headers = request.headers;
+        request.headers = std.StringHashMap([]const u8).init(arena_alloc);
 
         ctx.body = request.body;
         ctx.raw_path = request.raw_path;
