@@ -213,24 +213,6 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Generate documentation");
     docs_step.dependOn(&docs_run.step);
 
-    // ZModu step
-    const zmodu_mod = b.createModule(.{
-        .root_source_file = b.path("tools/zmodu/src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const zmodu_exe = b.addExecutable(.{
-        .name = "zmodu",
-        .root_module = zmodu_mod,
-    });
-
-    // Install zmodu CLI tool
-    b.installArtifact(zmodu_exe);
-    const zmodu_run = b.addRunArtifact(zmodu_exe);
-    if (b.args) |args| {
-        zmodu_run.addArgs(args);
-    }
-    const zmodu_step = b.step("zmodu", "Run zmodu code generator");
-    zmodu_step.dependOn(&zmodu_run.step);
+    // ZModu CLI: now at https://github.com/chy3xyz/zmodu
+    // Install: npm install -g @chy3xyz/zmodu
 }
