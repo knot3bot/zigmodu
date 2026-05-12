@@ -1,7 +1,16 @@
 //! Cache Manager with multiple eviction policies.
 //!
-//! LRU uses monotonic counter (O(1) promotion, O(n) eviction scan).
-//! LFU uses access_count field (O(1) promotion, O(n) eviction scan).
+//! LRU uses monotonic counter (O(1) promotion, O(n) eviction scan on cold path).
+//! LFU uses access_count field (O(1) promotion, O(n) eviction scan on cold path).
+//! FIFO reuses LRU counter (entries never promoted — eviction by oldest lru_id).
+//! TTL scan only triggers at capacity; individual entries also expire on get().
+//!
+//! Design note: TailQueue-based O(1) eviction was evaluated but rejected —
+//! it requires heap-allocating every entry for pointer stability, which adds
+//! one allocation per entry and hurts cache locality. The O(n) scan is cold-path
+//! (cache-full only) and dominates only when eviction is frequent, which is the
+//! degenerate case the caller should avoid by sizing the cache appropriately.
+//!
 //! Thread safety: single-threaded. Use external Mutex for concurrent access.
 
 const std = @import("std");
@@ -109,7 +118,8 @@ pub const CacheManager = struct {
         return true;
     }
 
-    /// Evict one entry per policy. O(n) scan for LRU/LFU (dominant cost is HashMap iteration).
+    /// Evict one entry per policy. O(n) scan — cold path, only called when
+    /// cache is at capacity. Callers should size caches to make eviction rare.
     fn evict(self: *Self) !void {
         if (self.entries.count() == 0) return;
 
@@ -161,14 +171,12 @@ test "CacheManager LRU eviction" {
 
     try cache.set("a", "1");
     try cache.set("b", "2");
-    // Access "a" to make it more recent
     _ = cache.get("a");
-    // Add "c" — should evict "b" (older LRU)
     try cache.set("c", "3");
 
     try std.testing.expect(cache.get("a") != null);
     try std.testing.expect(cache.get("c") != null);
-    try std.testing.expect(cache.get("b") == null); // evicted
+    try std.testing.expect(cache.get("b") == null);
 }
 
 test "CacheManager TTL expiration" {
@@ -178,8 +186,7 @@ test "CacheManager TTL expiration" {
 
     try cache.set("x", "val");
     try std.testing.expect(cache.get("x") != null);
-    // TTL=1 means immediate expiry on next access
-    _ = cache.get("x"); // triggers TTL check — may expire
+    _ = cache.get("x");
 }
 
 test "CacheManager LFU eviction" {
@@ -190,10 +197,10 @@ test "CacheManager LFU eviction" {
     try cache.set("a", "1");
     try cache.set("b", "2");
     _ = cache.get("a");
-    _ = cache.get("a"); // a has access_count=3
-    _ = cache.get("b"); // b has access_count=2
+    _ = cache.get("a");
+    _ = cache.get("b");
 
-    try cache.set("c", "3"); // should evict b (lower access count)
+    try cache.set("c", "3");
     try std.testing.expect(cache.get("a") != null);
     try std.testing.expect(cache.get("b") == null);
 }

@@ -30,7 +30,7 @@
 | Item | Current | Target | Impact |
 |------|---------|--------|:------:|
 | ~~Response streaming~~ | ~~Full buffer before write~~ | `writeBody()` + chunked transfer | **DONE v0.9.5** |
-| CacheManager eviction | O(n) HashMap scan | `std.TailQueue` O(1) pop | Cold path only |
+| CacheManager eviction | O(n) HashMap scan | Evaluated TailQueue, rejected (see below) | Cold path only |
 
 ### P2 (est. +1 score)
 | Item | Current | Target | Impact |
@@ -81,3 +81,11 @@ Saves 2 allocs per path parameter.
 Fixed use-after-transfer bug: form Content-Type check was reading from
 `request.headers` after ownership had already been moved to `ctx.headers`,
 silently breaking all form body parsing.
+
+### TailQueue Eviction (Evaluated, Rejected)
+`std.DoublyLinkedList`-based O(1) LRU eviction was prototyped but rejected:
+intrusive list nodes require stable pointers, forcing heap allocation of every
+`CacheEntry`. This adds 1 alloc/entry and degrades cache locality. The O(n)
+scan is cold-path (cache-full only); callers should size caches appropriately.
+Current `lru_counter` approach is simpler, more allocation-efficient, and the
+right engineering trade-off for the common case.
