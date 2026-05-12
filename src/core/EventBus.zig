@@ -177,12 +177,14 @@ pub fn ThreadSafeEventBus(comptime T: type) type {
         const Self = @This();
 
         bus: TypedEventBus(T),
-        mu: std.Thread.Mutex,
+        io: std.Io,
+        mu: std.Io.Mutex,
 
-        pub fn init(alloc: std.mem.Allocator) Self {
+        pub fn init(alloc: std.mem.Allocator, ioo: std.Io) Self {
             return .{
                 .bus = TypedEventBus(T).init(alloc),
-                .mu = .{},
+                .io = ioo,
+                .mu = .init,
             };
         }
 
@@ -191,14 +193,14 @@ pub fn ThreadSafeEventBus(comptime T: type) type {
         }
 
         pub fn subscribe(self: *Self, listener: TypedEventBus(T).CallbackType) !void {
-            self.mu.lock();
-            defer self.mu.unlock();
+            self.mu.lock(self.io) catch return;
+            defer self.mu.unlock(self.io);
             try self.bus.subscribe(listener);
         }
 
         pub fn unsubscribe(self: *Self, listener: TypedEventBus(T).CallbackType) void {
-            self.mu.lock();
-            defer self.mu.unlock();
+            self.mu.lock(self.io) catch return;
+            defer self.mu.unlock(self.io);
             self.bus.unsubscribe(listener);
         }
 
@@ -208,14 +210,14 @@ pub fn ThreadSafeEventBus(comptime T: type) type {
         /// Keep listener handlers short (non-blocking). For long-running work,
         /// have listeners enqueue to a worker instead of processing inline.
         pub fn publish(self: *Self, event: T) void {
-            self.mu.lock();
-            defer self.mu.unlock();
+            self.mu.lock(self.io) catch return;
+            defer self.mu.unlock(self.io);
             self.bus.publish(event);
         }
 
         pub fn subscriberCount(self: *Self) usize {
-            self.mu.lock();
-            defer self.mu.unlock();
+            self.mu.lock(self.io) catch return 0;
+            defer self.mu.unlock(self.io);
             return self.bus.subscriberCount();
         }
     };

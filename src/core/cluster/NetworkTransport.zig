@@ -29,7 +29,7 @@ pub const ClusterConnection = struct {
     pub fn send(self: *ClusterConnection, payload: []const u8) !void {
         var len_buf: [4]u8 = undefined;
         const len: u32 = @intCast(payload.len);
-        std.mem.writeInt(u32, &len_buf, len, .big);
+        std.mem.writeInt(u32, len_buf[0..], len, .big);
         _ = try self.stream.write(self.io, &len_buf);
         _ = try self.stream.write(self.io, payload);
     }

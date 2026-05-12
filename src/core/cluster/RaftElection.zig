@@ -113,7 +113,7 @@ pub const RaftElection = struct {
         const local_id_copy = try allocator.dupe(u8, local_id);
         errdefer allocator.free(local_id_copy);
 
-        var peers_copy = std.ArrayList(Peer).init(allocator);
+        var peers_copy = std.ArrayList(Peer).empty;
         for (peers) |peer| {
             const id_copy = try allocator.dupe(u8, peer.id);
             const addr_copy = try allocator.dupe(u8, peer.address);

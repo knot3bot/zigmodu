@@ -1,8 +1,9 @@
 const std = @import("std");
+const Time = @import("core/Time.zig");
 
 /// Generate a random hex string suitable for trace IDs / request IDs.
 pub fn randomHex(allocator: std.mem.Allocator, len: usize) ![]const u8 {
-    const seed = @as(u64, @intCast(@abs(std.time.timestamp()))) ^ @as(u64, @intCast(std.time.microTimestamp()));
+    const seed = @as(u64, @intCast(Time.monotonicNowMilliseconds())) ^ @as(u64, @intFromPtr(&len));
     var rng = std.rand.DefaultPrng.init(seed);
     const hex_chars = "0123456789abcdef";
     var buf = try allocator.alloc(u8, len);

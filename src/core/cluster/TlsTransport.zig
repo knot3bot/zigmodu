@@ -59,7 +59,7 @@ pub const ClusterAuth = struct {
     pub fn verify(self: *ClusterAuth, payload: []const u8, signature: []const u8) bool {
         const expected = self.sign(payload) catch return false;
         // Constant-time comparison to prevent timing oracle
-        return std.crypto.timing_safe.eql(u8, &expected, signature);
+        return std.crypto.timing_safe.eql(u8, expected[0..], signature);
     }
 };
 

@@ -45,7 +45,7 @@ pub fn main() !void {
 
     var json_file = try std.Io.Dir.cwd().createFile("docs/modules.json", .{});
     defer json_file.close(std.testing.io);
-    try json_file.writeAll(json);
+    try json_file.writeStreamingAll(std.testing.io, json);
     std.log.info("JSON docs generated: docs/modules.json", .{});
 
     const md = try zigmodu.Documentation.generateMarkdownDocs(&modules, allocator);
@@ -53,6 +53,6 @@ pub fn main() !void {
 
     var md_file = try std.Io.Dir.cwd().createFile("docs/modules.md", .{});
     defer md_file.close(std.testing.io);
-    try md_file.writeAll(md);
+    try md_file.writeStreamingAll(std.testing.io, md);
     std.log.info("Markdown docs generated: docs/modules.md", .{});
 }

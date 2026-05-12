@@ -77,7 +77,7 @@ pub const PasswordEncoder = struct {
 
         // Constant-time comparison to prevent timing side-channel
         if (expected_hash.len != derived_key.len) return false;
-        return std.crypto.timing_safe.eql(u8, &derived_key, expected_hash[0..derived_key.len]);
+        return std.crypto.timing_safe.eql(u8, derived_key[0..], expected_hash[0..derived_key.len]);
     }
 
     pub fn needsUpgrade(self: *PasswordEncoder, encoded_hash: []const u8) bool {

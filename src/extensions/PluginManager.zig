@@ -139,11 +139,11 @@ pub const PluginManager = struct {
 
     /// Load all plugins from plugin directory
     pub fn loadAllPlugins(self: *Self) !void {
-        var dir = std.fs.openDirAbsolute(self.plugin_dir, .{ .iterate = true }) catch |err| {
+        var dir = try self.io.dir().openDir(self.plugin_dir, .{ .iterate = true }) catch |err| {
             std.log.warn("[PluginManager] Could not open plugin directory: {s} - {}", .{ self.plugin_dir, err });
             return;
         };
-        defer dir.close();
+        defer dir.close(self.io);
 
         var iter = dir.iterate();
         while (try iter.next()) |entry| {

@@ -85,17 +85,17 @@ fn buildInClause(allocator: std.mem.Allocator, comptime col: []const u8, ids: []
     return allocator.dupe(u8, buf[0..pos]);
 }
 
-fn parseDeptIds(allocator: std.mem.Allocator, input: []const u8) ![]const i64 {
-    var list = std.ArrayList(i64).init(allocator);
+fn parseDeptIds(alloc: std.mem.Allocator, input: []const u8) ![]const i64 {
+    var list = std.ArrayList(i64).empty;
     const cleaned = if (input.len > 0 and input[0] == '[') input[1..input.len-1] else input;
     var it = std.mem.tokenizeScalar(u8, cleaned, ',');
     while (it.next()) |token| {
         const trimmed = std.mem.trim(u8, token, " \t\n\r[]");
         if (trimmed.len == 0) continue;
         const id = std.fmt.parseInt(i64, trimmed, 10) catch continue;
-        try list.append(id);
+        try list.append(alloc, id);
     }
-    return list.toOwnedSlice();
+    return list.toOwnedSlice(alloc);
 }
 
 test "DataPermissionContext init and default" {

@@ -105,7 +105,7 @@ pub const MenuTreeNode = struct {
     always_show: bool,
     parent_id: i64,
     sort: i32,
-    children: std.ArrayListUnmanaged(MenuTreeNode) = .{},
+    children: std.ArrayList(MenuTreeNode) = .{},
 
     pub fn deinit(self: *MenuTreeNode, allocator: std.mem.Allocator) void {
         for (self.children.items) |*child| {
@@ -129,7 +129,7 @@ pub const AuthInfo = struct {
     tenant_id: i64,
     username: []const u8,
     role_ids: []const i64,
-    permissions: std.StringHashMapUnmanaged(bool) = .{},
+    permissions: std.StringHashMap(bool) = .{},
 
     pub fn deinit(self: *AuthInfo, allocator: std.mem.Allocator) void {
         allocator.free(self.username);
@@ -171,8 +171,8 @@ pub const RbacEngine = struct {
     }
 
     /// 从扁平菜单列表构建权限集合
-    pub fn buildPermissionSet(allocator: std.mem.Allocator, menus: []const Menu) !std.StringHashMapUnmanaged(bool) {
-        var set: std.StringHashMapUnmanaged(bool) = .{};
+    pub fn buildPermissionSet(allocator: std.mem.Allocator, menus: []const Menu) !std.StringHashMap(bool) {
+        var set: std.StringHashMap(bool) = .{};
         for (menus) |menu| {
             if (menu.permission.len > 0) {
                 try set.put(allocator, menu.permission, true);
@@ -182,8 +182,8 @@ pub const RbacEngine = struct {
     }
 
     /// 构建菜单树（从扁平列表 → 树结构）
-    pub fn buildMenuTree(self: *const RbacEngine, menus: []const Menu, root_id: i64) !std.ArrayListUnmanaged(MenuTreeNode) {
-        var nodes = std.ArrayListUnmanaged(MenuTreeNode){};
+    pub fn buildMenuTree(self: *const RbacEngine, menus: []const Menu, root_id: i64) !std.ArrayList(MenuTreeNode) {
+        var nodes = std.ArrayList(MenuTreeNode){};
         var node_map = std.AutoHashMap(i64, *MenuTreeNode).init(self.allocator);
         defer node_map.deinit();
 
@@ -228,7 +228,7 @@ pub const RbacEngine = struct {
     }
 
     /// 过滤菜单树：只保留用户有权访问的节点
-    pub fn filterTreeByPermission(self: *const RbacEngine, tree: *std.ArrayListUnmanaged(MenuTreeNode), auth: *const AuthInfo) void {
+    pub fn filterTreeByPermission(self: *const RbacEngine, tree: *std.ArrayList(MenuTreeNode), auth: *const AuthInfo) void {
         var i: usize = 0;
         while (i < tree.items.len) {
             var node = &tree.items[i];
@@ -250,7 +250,7 @@ pub const RbacEngine = struct {
         }
     }
 
-    fn sortTreeNodes(nodes: std.ArrayListUnmanaged(MenuTreeNode)) void {
+    fn sortTreeNodes(nodes: std.ArrayList(MenuTreeNode)) void {
         const Ctx = struct {
             fn less(_: void, a: MenuTreeNode, b: MenuTreeNode) bool {
                 if (a.sort != b.sort) return a.sort < b.sort;
