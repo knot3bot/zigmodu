@@ -840,7 +840,7 @@ const Router = struct {
         return result.toOwnedSlice(alloc);
     }
 
-    pub fn match(self: *const Router, method: Method, path: []const u8) ?MatchedRoute {
+    pub fn match(self: *const Router, allocator: std.mem.Allocator, method: Method, path: []const u8) ?MatchedRoute {
         const root = self.roots.get(method) orelse return null;
 
         const MAX_PARAMS = 8;
@@ -858,31 +858,29 @@ const Router = struct {
                 current = child;
             } else if (current.findParamChild()) |param_child| {
                 if (param_count >= MAX_PARAMS) return null;
-                param_keys[param_count] = self.allocator.dupe(u8, param_child.param_name.?) catch return null;
-                errdefer self.allocator.free(param_keys[param_count]);
-                param_vals[param_count] = self.allocator.dupe(u8, part) catch {
-                    self.allocator.free(param_keys[param_count]);
+                param_keys[param_count] = allocator.dupe(u8, param_child.param_name.?) catch return null;
+                errdefer allocator.free(param_keys[param_count]);
+                param_vals[param_count] = allocator.dupe(u8, part) catch {
+                    allocator.free(param_keys[param_count]);
                     return null;
                 };
                 param_count += 1;
                 current = param_child;
             } else {
-                // Free any allocated params on mismatch
                 for (0..param_count) |i| {
-                    self.allocator.free(param_keys[i]);
-                    self.allocator.free(param_vals[i]);
+                    allocator.free(param_keys[i]);
+                    allocator.free(param_vals[i]);
                 }
                 return null;
             }
         }
 
         if (current.route) |route| {
-            // Build HashMap from the fixed-size buffer for API compatibility
-            var params = std.StringHashMap([]const u8).init(self.allocator);
+            var params = std.StringHashMap([]const u8).init(allocator);
             for (0..param_count) |i| {
                 params.put(param_keys[i], param_vals[i]) catch {
-                    self.allocator.free(param_keys[i]);
-                    self.allocator.free(param_vals[i]);
+                    allocator.free(param_keys[i]);
+                    allocator.free(param_vals[i]);
                 };
             }
             return MatchedRoute{
@@ -892,12 +890,11 @@ const Router = struct {
         }
 
         for (0..param_count) |i| {
-            self.allocator.free(param_keys[i]);
-            self.allocator.free(param_vals[i]);
+            allocator.free(param_keys[i]);
+            allocator.free(param_vals[i]);
         }
-        // Wildcard fallback: catch-all * route
         if (self.wildcards.get(method)) |wc| {
-            return MatchedRoute{ .route = wc, .params = std.StringHashMap([]const u8).init(self.allocator) };
+            return MatchedRoute{ .route = wc, .params = std.StringHashMap([]const u8).init(allocator) };
         }
         return null;
     }
@@ -1229,7 +1226,7 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
             }
         }
 
-        var matched = server.router.match(request.method, request.path);
+        var matched = server.router.match(arena_alloc, request.method, request.path);
         if (matched) |*m| {
             defer {
                 var it = m.params.iterator();
@@ -1418,7 +1415,7 @@ test "path matching" {
 
     try router.addRoute(route);
 
-    var matched = router.match(.GET, "/users/123");
+    var matched = router.match(std.testing.allocator, .GET, "/users/123");
     if (matched) |*m| {
         defer {
             var iter = m.params.iterator();
@@ -1433,7 +1430,7 @@ test "path matching" {
         try std.testing.expect(false);
     }
 
-    const no_match = router.match(.GET, "/posts/123");
+    const no_match = router.match(std.testing.allocator, .GET, "/posts/123");
     try std.testing.expect(no_match == null);
 }
 
@@ -1473,7 +1470,7 @@ test "route group" {
     }.handle, null);
 
     // Route should exist at /api/v1/users
-    const matched = server.router.match(.GET, "/api/v1/users");
+    const matched = server.router.match(allocator,.GET, "/api/v1/users");
     try std.testing.expect(matched != null);
 }
 
@@ -1594,7 +1591,7 @@ test "integration: router + handler + response" {
     });
 
     // 2. Simulate a matched request
-    var matched = server.router.match(.GET, "/users/99");
+    var matched = server.router.match(allocator,.GET, "/users/99");
     try std.testing.expect(matched != null);
 
     if (matched) |*m| {
@@ -1707,7 +1704,7 @@ test "integration: router + global middleware + handler" {
     });
 
     // Simulate match
-    var matched = server.router.match(.GET, "/health");
+    var matched = server.router.match(allocator,.GET, "/health");
     try std.testing.expect(matched != null);
 
     if (matched) |*m| {
@@ -1780,7 +1777,7 @@ test "e2e: full middleware chain with error path" {
     // Test 1: happy path
     {
         Ctx.hit_count = 0;
-        var matched = server.router.match(.POST, "/items");
+        var matched = server.router.match(allocator,.POST, "/items");
         try std.testing.expect(matched != null);
         if (matched) |*m| {
             defer {
@@ -1802,14 +1799,14 @@ test "e2e: full middleware chain with error path" {
 
     // Test 2: route not found (404)
     {
-        const matched = server.router.match(.GET, "/nonexistent");
+        const matched = server.router.match(allocator,.GET, "/nonexistent");
         try std.testing.expect(matched == null);
     }
 
     // Test 3: panic handler returns 500
     {
         Ctx.hit_count = 0;
-        var matched = server.router.match(.GET, "/boom");
+        var matched = server.router.match(allocator,.GET, "/boom");
         try std.testing.expect(matched != null);
         if (matched) |*m| {
             defer {
@@ -1876,10 +1873,10 @@ test "router scalability: 200 routes with O(1) child lookup" {
     }
 
     // Verify all 200 routes match correctly
-    try std.testing.expect(router.match(.GET, "/api/v1/users/42") != null);
-    try std.testing.expect(router.match(.POST, "/api/v1/users/7/posts") != null);
-    try std.testing.expect(router.match(.GET, "/api/v2/items/3/details") != null);
-    try std.testing.expect(router.match(.GET, "/nonexistent") == null);
+    try std.testing.expect(router.match(allocator, .GET, "/api/v1/users/42") != null);
+    try std.testing.expect(router.match(allocator, .POST, "/api/v1/users/7/posts") != null);
+    try std.testing.expect(router.match(allocator, .GET, "/api/v2/items/3/details") != null);
+    try std.testing.expect(router.match(allocator, .GET, "/nonexistent") == null);
 
     // Verify listRoutes returns all 200
     const routes = try router.listRoutes(allocator);

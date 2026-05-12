@@ -62,11 +62,11 @@ pub const Row = struct {
     }
 
     pub fn scan(self: Row, allocator: std.mem.Allocator, comptime T: type) !T {
-        return scanStruct(allocator, T, self, false);
+        return scanStruct(allocator, T, self, false, null);
     }
 
     pub fn scanPartial(self: Row, allocator: std.mem.Allocator, comptime T: type) !T {
-        return scanStruct(allocator, T, self, true);
+        return scanStruct(allocator, T, self, true, null);
     }
 };
 
@@ -144,54 +144,96 @@ pub const Conn = struct {
 
 // ==================== Struct Scanning ====================
 
-fn scanStruct(allocator: std.mem.Allocator, comptime T: type, row: Row, partial: bool) !T {
+/// Precompute struct-field → column-index mapping once per query.
+/// Eliminates O(F*C) string comparisons per row — each row scan
+/// becomes O(F) direct array indexing instead of O(F*C) linear probes.
+fn buildColumnIndices(comptime T: type, columns: []const []const u8) ![std.meta.fields(T).len]?usize {
+    const fields = std.meta.fields(T);
+    var indices: [fields.len]?usize = [_]?usize{null} ** fields.len;
+    inline for (fields, 0..) |field, fi| {
+        for (columns, 0..) |col, ci| {
+            if (std.mem.eql(u8, col, field.name)) {
+                indices[fi] = ci;
+                break;
+            }
+        }
+    }
+    return indices;
+}
+
+/// Scan a struct Row, optionally using precomputed column indices for O(1) field lookup.
+fn scanStruct(allocator: std.mem.Allocator, comptime T: type, row: Row, partial: bool, indices: ?[std.meta.fields(T).len]?usize) !T {
     const info = @typeInfo(T);
     if (info != .@"struct") @compileError("scanStruct only supports structs, got " ++ @typeName(T));
 
     var result: T = undefined;
-    inline for (info.@"struct".fields) |field| {
+    inline for (info.@"struct".fields, 0..) |field, fi| {
         const FieldType = field.type;
         const is_optional = @typeInfo(FieldType) == .optional;
         const BaseType = if (is_optional) @typeInfo(FieldType).optional.child else FieldType;
         const is_string = BaseType == []const u8;
+        const ci: ?usize = if (indices) |idx| idx[fi] else null;
 
         if (is_string) {
-            // String fields: bypass row.get() to avoid double-duplication.
-            // row.get() duplicates the string; valueToType would duplicate again.
-            found: {
-                for (row.columns, 0..) |col, ci| {
-                    if (std.mem.eql(u8, col, field.name)) {
-                        const raw_val = row.values[ci];
-                        if (raw_val == null or raw_val.? == .null) {
-                            if (is_optional) {
-                                @field(result, field.name) = null;
-                            } else if (partial) {
-                                @field(result, field.name) = &[_]u8{};
-                            } else {
-                                return error.NotFound;
-                            }
-                        } else {
-                            // raw_val.? is .string. Dupe it once (owned); freeScanned frees it.
-                            const str = raw_val.?.string;
-                            @field(result, field.name) = allocator.dupe(u8, str) catch return error.DatabaseError;
-                        }
-                        break :found;
+            // String fields: use index if available, otherwise linear scan.
+            if (ci) |c| {
+                const raw_val = row.values[c];
+                if (raw_val == null or raw_val.? == .null) {
+                    if (is_optional) {
+                        @field(result, field.name) = null;
+                    } else if (partial) {
+                        @field(result, field.name) = &[_]u8{};
+                    } else {
+                        return error.NotFound;
                     }
-                }
-                // Column not found
-                if (is_optional) {
-                    @field(result, field.name) = null;
-                } else if (partial) {
-                    @field(result, field.name) = &[_]u8{};
                 } else {
-                    return error.NotFound;
+                    const str = raw_val.?.string;
+                    @field(result, field.name) = allocator.dupe(u8, str) catch return error.DatabaseError;
+                }
+            } else {
+                // Fallback: linear scan (no column index provided)
+                found: {
+                    for (row.columns, 0..) |col, ci2| {
+                        if (std.mem.eql(u8, col, field.name)) {
+                            const raw_val = row.values[ci2];
+                            if (raw_val == null or raw_val.? == .null) {
+                                if (is_optional) {
+                                    @field(result, field.name) = null;
+                                } else if (partial) {
+                                    @field(result, field.name) = &[_]u8{};
+                                } else {
+                                    return error.NotFound;
+                                }
+                            } else {
+                                const str = raw_val.?.string;
+                                @field(result, field.name) = allocator.dupe(u8, str) catch return error.DatabaseError;
+                            }
+                            break :found;
+                        }
+                    }
+                    if (is_optional) {
+                        @field(result, field.name) = null;
+                    } else if (partial) {
+                        @field(result, field.name) = &[_]u8{};
+                    } else {
+                        return error.NotFound;
+                    }
                 }
             }
             continue;
         }
 
-        // Non-string fields: use row.get() as before (no duplication concern)
-        const val = row.get(field.name);
+        // Non-string fields: use index if available, otherwise row.get()
+        const val: ?Value = if (ci) |c| blk: {
+            if (row.values[c]) |v| {
+                switch (v) {
+                    .string => |s| break :blk .{ .string = row.allocator.dupe(u8, s) catch return error.DatabaseError },
+                    else => break :blk v,
+                }
+            }
+            break :blk null;
+        } else row.get(field.name);
+
         if (is_optional) {
             const ChildType = BaseType;
             if (val == null or val.? == .null) {
@@ -1618,13 +1660,18 @@ pub const Client = struct {
     pub fn queryRows(self: *Client, comptime T: type, sql_str: []const u8, args: []const Value) ![]T {
         var rows = try self.query(sql_str, args);
         defer rows.deinit();
+        // Precompute column→field index once per query (O(F*C) once, not per row)
+        const indices = if (rows.rows.len > 0)
+            try buildColumnIndices(T, rows.rows[0].columns)
+        else
+            null;
         const result = try self.allocator.alloc(T, rows.rows.len);
         errdefer {
             for (result) |item| freeScanned(self.allocator, T, item);
             self.allocator.free(result);
         }
         for (rows.rows, 0..) |row, i| {
-            result[i] = try row.scan(self.allocator, T);
+            result[i] = try scanStruct(self.allocator, T, row, false, indices);
         }
         return result;
     }
@@ -1637,13 +1684,17 @@ pub const Client = struct {
     pub fn queryRowsPartial(self: *Client, comptime T: type, sql_str: []const u8, args: []const Value) ![]T {
         var rows = try self.query(sql_str, args);
         defer rows.deinit();
+        const indices = if (rows.rows.len > 0)
+            try buildColumnIndices(T, rows.rows[0].columns)
+        else
+            null;
         const result = try self.allocator.alloc(T, rows.rows.len);
         errdefer {
             for (result) |item| freeScanned(self.allocator, T, item);
             self.allocator.free(result);
         }
         for (rows.rows, 0..) |row, i| {
-            result[i] = try row.scanPartial(self.allocator, T);
+            result[i] = try scanStruct(self.allocator, T, row, true, indices);
         }
         return result;
     }
@@ -1770,13 +1821,17 @@ pub const Transaction = struct {
     pub fn queryRows(self: *Transaction, allocator: std.mem.Allocator, comptime T: type, sql_str: []const u8, args: []const Value) ![]T {
         var rows = try self.query(allocator, sql_str, args);
         defer rows.deinit();
+        const indices = if (rows.rows.len > 0)
+            try buildColumnIndices(T, rows.rows[0].columns)
+        else
+            null;
         const result = try allocator.alloc(T, rows.rows.len);
         errdefer {
             for (result) |item| freeScanned(allocator, T, item);
             allocator.free(result);
         }
         for (rows.rows, 0..) |row, i| {
-            result[i] = try row.scan(allocator, T);
+            result[i] = try scanStruct(allocator, T, row, false, indices);
         }
         return result;
     }
