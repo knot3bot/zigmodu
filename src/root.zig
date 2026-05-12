@@ -155,7 +155,7 @@ pub const ContractVerificationResult = @import("test/ContractTest.zig").Contract
 pub const App = @import("api/Simplified.zig").App;
 pub const Module = @import("api/Simplified.zig").Module;
 pub const ModuleImpl = @import("api/Simplified.zig").ModuleImpl;
-pub const extensions = @import("extensions.zig");
+// extensions namespace removed — use domain files: zigmodu.http, zigmodu.data, etc.
 
 // ============================================================
 // TESTS

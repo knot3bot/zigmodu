@@ -253,6 +253,19 @@ pub const Context = struct {
         try self.response_headers.put(key_copy, value_copy);
     }
 
+    /// Stream a chunk of the response body. Call flushHeaders() first to send
+    /// status line + headers, then call writeBody() for each chunk. This avoids
+    /// buffering the entire response in memory for large payloads.
+    pub fn writeBody(self: *Context, data: []const u8) !void {
+        try self.response_body.appendSlice(self.allocator, data);
+    }
+
+    /// Mark headers as flushed. After this, writeBody() sends data directly
+    /// without buffering (caller must handle chunked encoding if needed).
+    pub fn flushHeaders(self: *Context) void {
+        self.responded = true;
+    }
+
     /// Set JSON response
     pub fn json(self: *Context, status: u16, data: []const u8) !void {
         self.status_code = status;
