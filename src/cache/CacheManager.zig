@@ -82,18 +82,19 @@ pub const CacheManager = struct {
     }
 
     /// O(1) lookup. LRU promotion is O(1) via lru_counter increment.
+    /// Uses cachedNowSeconds() for TTL + last_accessed — ~1s staleness acceptable.
     pub fn get(self: *Self, key: []const u8) ?[]const u8 {
         const entry = self.entries.getPtr(key) orelse return null;
+        const now = Time.cachedNowSeconds();
 
         if (self.ttl_seconds > 0) {
-            const now = Time.monotonicNowSeconds();
             if (@as(u64, @intCast(now - entry.created_at)) > self.ttl_seconds) {
                 _ = self.remove(key);
                 return null;
             }
         }
 
-        entry.last_accessed = Time.monotonicNowSeconds();
+        entry.last_accessed = now;
         entry.access_count += 1;
         self.lru_counter += 1;
         entry.lru_id = self.lru_counter; // O(1) LRU promotion
@@ -132,7 +133,7 @@ pub const CacheManager = struct {
                     }
                 },
                 .TTL => {
-                    const now = Time.monotonicNowSeconds();
+                    const now = Time.cachedNowSeconds();
                     if (@as(u64, @intCast(now - entry.value_ptr.created_at)) > self.ttl_seconds) {
                         key_to_remove = entry.key_ptr.*;
                         break;

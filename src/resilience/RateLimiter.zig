@@ -59,9 +59,9 @@ pub const RateLimiter = struct {
         return false;
     }
 
-    /// 补充令牌
+    /// 补充令牌 (uses cached timestamp — refill rate is per-second, ~1s staleness OK)
     fn refill(self: *Self) void {
-        const now = Time.monotonicNowSeconds();
+        const now = Time.cachedNowSeconds();
         const elapsed = now - self.last_refill_time;
 
         if (elapsed > 0) {
@@ -213,7 +213,7 @@ pub const SlidingWindowRateLimiter = struct {
 
     /// 清理过期的请求记录
     fn cleanupOldRequests(self: *Self) void {
-        const now = Time.monotonicNowSeconds();
+        const now = Time.cachedNowSeconds();
         const cutoff = now - @as(i64, @intCast(self.window_size_seconds));
 
         var i: usize = 0;

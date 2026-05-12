@@ -29,30 +29,55 @@
 ### P1 (est. +2 score)
 | Item | Current | Target | Impact |
 |------|---------|--------|:------:|
-| Response streaming | Full buffer before write | `writeBody()` + chunked transfer | Large payloads |
+| ~~Response streaming~~ | ~~Full buffer before write~~ | `writeBody()` + chunked transfer | **DONE v0.9.5** |
 | CacheManager eviction | O(n) HashMap scan | `std.TailQueue` O(1) pop | Cold path only |
 
 ### P2 (est. +1 score)
 | Item | Current | Target | Impact |
 |------|---------|--------|:------:|
 | `getQuantile()` | O(n log n) full sort | QuickSelect O(n) | Summary queries |
-| Router match() HashMap | Alloc per match | Arena scratch buffer | Per-match alloc |
-| `Time.monotonicNow()` | Syscall per call | Atomic ticker thread | Cold for coarse users |
+| ~~Router match() HashMap~~ | ~~Alloc per match~~ | Ownership transfer to ctx | **DONE v0.9.5** |
+| ~~`Time.monotonicNow()`~~ | ~~Syscall per call~~ | `cachedNowSeconds()` 1s TTL | **DONE v0.9.5** |
 
 ## Per-Request Allocation Budget
 
 | Operation | Allocations |
 |-----------|:-----------:|
 | Request parsing (path+headers) | ~4 |
-| Context creation (5 HashMaps) | ~5 |
-| Route matching | ~1 (HashMap on match) |
+| Context creation (3 HashMaps + response_body) | ~4 |
+| Route matching | 0 (ownership transfer to ctx) |
 | Middleware chain | 0 (pre-composed) |
-| Response writing | ~1 |
-| **Total** | **~11** |
+| Response writing | 0 (direct socket write) |
+| **Total** | **~8** |
 
-Down from ~15 pre-optimization. Further reduction possible with lazy HashMap init.
+Down from ~15 pre-optimization, ~11 in v0.9.4. Form HashMap is lazy (only for POST).
 
 ## Benchmark Notes
 - Local wrk: ~10K+ RPS on M-series Mac
 - SQLite: <1ms query latency with connection pooling
 - No regression in keep-alive throughput vs v0.8.x
+
+## v0.9.5 Optimizations (2026-05-12)
+
+### Response Direct Socket Write
+`writeResponse()` writes status line + headers + body directly to the stream
+via small stack buffers. Eliminates intermediate `ArrayList(u8)` allocation + copy
+per response. Also skips `Content-Length` header when `Transfer-Encoding: chunked`
+is set (HTTP spec compliance).
+
+### Cached Timestamp 1s TTL
+`cachedNowSeconds()` auto-refreshes on 1-second boundary. First call within a
+second hits `clock_gettime`; subsequent calls return the cached value. Used in:
+- CacheManager.get() — single call serves TTL check + last_accessed
+- RateLimiter.refill() — token bucket is inherently per-second
+- SlidingWindowRateLimiter — window cleanup is per-second
+
+### Params Ownership Transfer
+Route match params HashMap ownership transferred directly to Context, avoiding
+per-param key/value duplications. Same pattern already used for query/headers.
+Saves 2 allocs per path parameter.
+
+### Form Parsing Fix
+Fixed use-after-transfer bug: form Content-Type check was reading from
+`request.headers` after ownership had already been moved to `ctx.headers`,
+silently breaking all form body parsing.

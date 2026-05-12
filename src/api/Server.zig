@@ -954,32 +954,36 @@ fn getStatusText(status: u16) []const u8 {
     };
 }
 
-/// Write HTTP response to a `std.Io.net.Stream`.
-fn writeResponse(io: std.Io, allocator: std.mem.Allocator, stream: std.Io.net.Stream, status: u16, headers: std.StringHashMap([]const u8), body: []const u8) !void {
-    const status_text = getStatusText(status);
-
-    var resp = std.ArrayList(u8).empty;
-    defer resp.deinit(allocator);
-
-    var line_buf: [128]u8 = undefined;
-    const status_line = try std.fmt.bufPrint(&line_buf, "HTTP/1.1 {d} {s}\r\n", .{ status, status_text });
-    try resp.appendSlice(allocator, status_line);
-
-    var hiter = headers.iterator();
-    while (hiter.next()) |entry| {
-        try resp.appendSlice(allocator, entry.key_ptr.*);
-        try resp.appendSlice(allocator, ": ");
-        try resp.appendSlice(allocator, entry.value_ptr.*);
-        try resp.appendSlice(allocator, "\r\n");
-    }
-
-    const len_line = try std.fmt.bufPrint(&line_buf, "Content-Length: {d}\r\n\r\n", .{body.len});
-    try resp.appendSlice(allocator, len_line);
-    try resp.appendSlice(allocator, body);
-
+/// Write HTTP response directly to a `std.Io.net.Stream`.
+/// Avoids intermediate ArrayList allocation — formats status line and headers
+/// into small stack buffers and writes body directly from caller's buffer.
+fn writeResponse(io: std.Io, stream: std.Io.net.Stream, status: u16, headers: std.StringHashMap([]const u8), body: []const u8) !void {
     var write_buf: [4096]u8 = undefined;
     var w = stream.writer(io, &write_buf);
-    try w.interface.writeAll(resp.items);
+
+    var line_buf: [256]u8 = undefined;
+    const status_text = getStatusText(status);
+
+    // Status line
+    const status_line = try std.fmt.bufPrint(&line_buf, "HTTP/1.1 {d} {s}\r\n", .{ status, status_text });
+    try w.interface.writeAll(status_line);
+
+    // Headers
+    var hiter = headers.iterator();
+    while (hiter.next()) |entry| {
+        const header_line = try std.fmt.bufPrint(&line_buf, "{s}: {s}\r\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+        try w.interface.writeAll(header_line);
+    }
+
+    // Content-Length (skip for chunked transfer to avoid HTTP spec violation)
+    if (headers.get("Transfer-Encoding") == null) {
+        const cl_line = try std.fmt.bufPrint(&line_buf, "Content-Length: {d}\r\n", .{body.len});
+        try w.interface.writeAll(cl_line);
+    }
+    try w.interface.writeAll("\r\n");
+
+    // Body (already chunk-encoded if Transfer-Encoding: chunked)
+    try w.interface.writeAll(body);
     try w.interface.flush();
 }
 
@@ -1219,9 +1223,7 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
 
         // Parse form body
         if (request.body) |body| {
-            const ct = request.headers.get("Content-Length") orelse "";
-            _ = ct;
-            const ctype = request.headers.get("Content-Type") orelse "";
+            const ctype = ctx.headers.get("Content-Type") orelse "";
             if (std.mem.startsWith(u8, ctype, "application/x-www-form-urlencoded")) {
                 ctx.form = parseFormBody(arena_alloc, body) catch null;
             }
@@ -1238,12 +1240,11 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
                 m.params.deinit();
             }
 
-            var piter = m.params.iterator();
-            while (piter.next()) |entry| {
-                const key = arena_alloc.dupe(u8, entry.key_ptr.*) catch continue;
-                const val = arena_alloc.dupe(u8, entry.value_ptr.*) catch continue;
-                ctx.params.put(key, val) catch {};
-            }
+            // Transfer params ownership (same pattern as query/headers above).
+            // Avoids duping every param key/value — saves 2 allocs per param.
+            ctx.params.deinit();
+            ctx.params = m.params;
+            m.params = std.StringHashMap([]const u8).init(arena_alloc);
 
             ctx.user_data = m.route.user_data;
 
@@ -1273,7 +1274,7 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
         }
 
         if (ctx.responded) {
-            writeResponse(server.io, arena_alloc, stream, ctx.status_code, ctx.response_headers, ctx.response_body.items) catch |err| {
+            writeResponse(server.io, stream, ctx.status_code, ctx.response_headers, ctx.response_body.items) catch |err| {
                 std.log.err("[HC] write error: {any}", .{err});
                 return;
             };
@@ -1312,7 +1313,7 @@ fn writeErrorResponse(io: std.Io, stream: std.Io.net.Stream, allocator: std.mem.
     const body = std.fmt.allocPrint(allocator, "{{\"error\":\"{s}\"}}", .{message}) catch return;
     defer allocator.free(body);
 
-    writeResponse(io, allocator, stream, status, headers, body) catch {};
+    writeResponse(io, stream, status, headers, body) catch {};
 }
 
 fn runMiddlewareChain(ctx: *Context) anyerror!void {
