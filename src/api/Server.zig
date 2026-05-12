@@ -649,7 +649,7 @@ const TrieNode = struct {
         if (self.param_name) |name| allocator.free(name);
         if (self.route) |route| {
             allocator.free(route.path);
-            allocator.free(route.combined_middleware);
+            if (route.combined_middleware.len > 0) allocator.free(route.combined_middleware);
         }
         for (self.children.items) |child| {
             child.deinit(allocator);
