@@ -253,6 +253,11 @@ pub const Context = struct {
         try self.response_headers.put(key_copy, value_copy);
     }
 
+    /// Type-safe accessor for user_data. Replaces @ptrCast(@alignCast(...)).
+    pub fn userData(self: *Context, comptime T: type) ?*T {
+        return @ptrCast(@alignCast(self.user_data));
+    }
+
     /// Stream a chunk of the response body. Call flushHeaders() first to send
     /// status line + headers, then call writeBody() for each chunk. This avoids
     /// buffering the entire response in memory for large payloads.

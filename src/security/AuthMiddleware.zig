@@ -91,10 +91,10 @@ pub fn requirePermission(perm: []const u8) api.Middleware {
         .func = struct {
             fn mw(ctx: *api.Context, next: api.HandlerFn, user_data: ?*anyopaque) anyerror!void {
                 const required = @as([]const u8, @ptrCast(@alignCast(user_data.?)));
-                const auth: *Rbac.AuthInfo = @ptrCast(@alignCast(ctx.user_data orelse {
+                const auth = ctx.userData(Rbac.AuthInfo) orelse {
                     try ctx.sendErrorResponse(403, 403, "Authentication required before permission check");
                     return;
-                }));
+                };
 
                 if (!auth.hasPermission(required)) {
                     try ctx.sendErrorResponse(403, 403, "Permission denied");
@@ -114,10 +114,10 @@ pub fn requireAnyPermission(perms: []const []const u8) !api.Middleware {
         .func = struct {
             fn mw(ctx: *api.Context, next: api.HandlerFn, user_data: ?*anyopaque) anyerror!void {
                 const required = @as([]const []const u8, @ptrCast(@alignCast(user_data.?)));
-                const auth: *Rbac.AuthInfo = @ptrCast(@alignCast(ctx.user_data orelse {
+                const auth = ctx.userData(Rbac.AuthInfo) orelse {
                     try ctx.sendErrorResponse(403, 403, "Authentication required before permission check");
                     return;
-                }));
+                };
 
                 if (!auth.hasAnyPermission(required)) {
                     try ctx.sendErrorResponse(403, 403, "Permission denied");
@@ -137,10 +137,10 @@ pub fn requireAllPermissions(perms: []const []const u8) !api.Middleware {
         .func = struct {
             fn mw(ctx: *api.Context, next: api.HandlerFn, user_data: ?*anyopaque) anyerror!void {
                 const required = @as([]const []const u8, @ptrCast(@alignCast(user_data.?)));
-                const auth: *Rbac.AuthInfo = @ptrCast(@alignCast(ctx.user_data orelse {
+                const auth = ctx.userData(Rbac.AuthInfo) orelse {
                     try ctx.sendErrorResponse(403, 403, "Authentication required before permission check");
                     return;
-                }));
+                };
 
                 if (!auth.hasAllPermissions(required)) {
                     try ctx.sendErrorResponse(403, 403, "Permission denied");
