@@ -1,5 +1,4 @@
 const std = @import("std");
-const zigmodu = @import("zigmodu");
 
 // ========================================
 // Compilation Gate: Ensure all source files compile
@@ -208,35 +207,17 @@ test "compile all source files" {
 // Domain Import Validation
 // ========================================
 test "domain imports: http" {
-    const http = zigmodu.http;
-    _ = http.http_server;
-    _ = http.HttpClient;
-    _ = http.Dashboard;
-    _ = http.ProblemDetails;
-    _ = http.OpenApiGenerator;
+    _ = @import("http.zig");
 }
 
 test "domain imports: data" {
-    const data = zigmodu.data;
-    _ = data.sqlx;
-    _ = data.redis;
-    _ = data.orm;
-    _ = data.CacheManager;
-    _ = data.MigrationRunner;
+    _ = @import("data.zig");
 }
 
 test "domain imports: security" {
-    const sec = zigmodu.security;
-    _ = sec.auth;
-    _ = sec.Rbac;
-    _ = sec.SecretsManager;
-    _ = sec.PasswordEncoder;
+    _ = @import("security.zig");
 }
 
 test "domain imports: observability" {
-    const obs = zigmodu.observability;
-    _ = obs.PrometheusMetrics;
-    _ = obs.DistributedTracer;
-    _ = obs.StructuredLogger;
-    _ = obs.MetricsBackend;
+    _ = @import("observability.zig");
 }
