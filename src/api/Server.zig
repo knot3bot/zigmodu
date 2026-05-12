@@ -276,10 +276,33 @@ pub const Context = struct {
         try self.response_body.appendSlice(self.allocator, data);
     }
 
-    /// Mark headers as flushed. After this, writeBody() sends data directly
-    /// without buffering (caller must handle chunked encoding if needed).
+    /// Mark headers as flushed. After this, writeBody() appends data for
+    /// chunked transfer (avoids buffering entire response in memory).
     pub fn flushHeaders(self: *Context) void {
         self.responded = true;
+    }
+
+    /// Start chunked transfer encoding for streaming large responses.
+    /// Call writeChunk() for each chunk, then endStream() when done.
+    pub fn startChunked(self: *Context, status: u16, content_type: []const u8) !void {
+        self.status_code = status;
+        try self.setHeader("Transfer-Encoding", "chunked");
+        try self.setHeader("Content-Type", content_type);
+        self.responded = true;
+    }
+
+    /// Write a chunk in chunked transfer encoding.
+    pub fn writeChunk(self: *Context, data: []const u8) !void {
+        const chunk_header = try std.fmt.allocPrint(self.allocator, "{x}\r\n", .{data.len});
+        defer self.allocator.free(chunk_header);
+        try self.response_body.appendSlice(self.allocator, chunk_header);
+        try self.response_body.appendSlice(self.allocator, data);
+        try self.response_body.appendSlice(self.allocator, "\r\n");
+    }
+
+    /// End chunked transfer encoding.
+    pub fn endStream(self: *Context) !void {
+        try self.response_body.appendSlice(self.allocator, "0\r\n\r\n");
     }
 
     /// Set JSON response
