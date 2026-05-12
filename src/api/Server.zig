@@ -225,9 +225,20 @@ pub const Context = struct {
         return self.query.get(key);
     }
 
+    /// Get query parameter as i64 with default.
+    pub fn queryInt(self: *const Context, key: []const u8, default: i64) i64 {
+        return if (self.query.get(key)) |v| std.fmt.parseInt(i64, v, 10) catch default else default;
+    }
+
     /// Get path parameter
     pub fn param(self: *const Context, key: []const u8) ?[]const u8 {
         return self.params.get(key);
+    }
+
+    /// Get path parameter as i64.
+    pub fn paramInt(self: *const Context, key: []const u8) !i64 {
+        const v = self.params.get(key) orelse return error.MissingParam;
+        return try std.fmt.parseInt(i64, v, 10);
     }
 
     /// Get header
@@ -308,6 +319,7 @@ pub const Context = struct {
     }
 
     /// Send success response with CommonResult wrapper: {"code":0,"msg":"","data":<data>}
+    /// DEPRECATED: use ctx.json(200, data) instead.
     pub fn sendSuccess(self: *Context, data_json: []const u8) !void {
         self.status_code = 200;
         try self.setHeader("Content-Type", "application/json");
@@ -318,6 +330,7 @@ pub const Context = struct {
     }
 
     /// Send fail response with CommonResult wrapper: {"code":<code>,"msg":"<msg>","data":null}
+    /// DEPRECATED: use ctx.json(status, body) instead.
     pub fn sendFail(self: *Context, code: u16, msg: []const u8) !void {
         self.status_code = 200;
         try self.setHeader("Content-Type", "application/json");
@@ -329,6 +342,7 @@ pub const Context = struct {
 
     /// Send paginated response with CommonResult wrapper:
     /// {"code":0,"msg":"","data":{"list":<items>,"total":<total>}}
+    /// DEPRECATED: use ctx.json(200, body) with pagination struct instead.
     pub fn sendPageResult(self: *Context, items_json: []const u8, total: usize) !void {
         self.status_code = 200;
         try self.setHeader("Content-Type", "application/json");
@@ -348,18 +362,21 @@ pub const Context = struct {
 
     /// Convenience: serialize any Zig value as JSON and wrap in success response.
     /// Usage: try ctx.sendJsonItems(vo_slice.items);
+    /// DEPRECATED: use ctx.json(200, ...) instead.
     pub fn sendJsonItems(self: *Context, items: anytype) !void {
         const json_str = try std.fmt.allocPrint(self.allocator, "{any}", .{std.json.fmt(items, .{})});
         defer self.allocator.free(json_str);
         try self.sendSuccess(json_str);
     }
 
-    /// Parse JSON body into type T
+    /// Parse JSON body into type T. Deep-copies string fields so the
+    /// returned value owns its memory (avoids use-after-free from arena).
     pub fn bindJson(self: *const Context, comptime T: type) !T {
         if (self.body == null) return error.NoBody;
         var parsed = std.json.parseFromSlice(T, self.allocator, self.body.?, .{}) catch return error.InvalidJson;
         defer parsed.deinit();
-        return parsed.value;
+        // Deep-copy value to escape the parse arena lifetime
+        return deepCopy(parsed.value, self.allocator);
     }
 
     /// Send JSON from struct
@@ -1250,6 +1267,42 @@ pub fn Json(comptime T: type) type {
     return struct {
         json: T,
     };
+}
+
+/// Deep-copy a parsed JSON value, duping all []const u8 fields
+/// to escape the parse arena lifetime. Supports nested structs.
+fn deepCopy(value: anytype, allocator: std.mem.Allocator) @TypeOf(value) {
+    const T = @TypeOf(value);
+    if (comptime T == []const u8 or T == []u8) {
+        return allocator.dupe(u8, value) catch @panic("OOM");
+    }
+    switch (@typeInfo(T)) {
+        .@"struct" => |s| {
+            var copy: T = undefined;
+            inline for (s.fields) |f| {
+                @field(copy, f.name) = deepCopy(@field(value, f.name), allocator);
+            }
+            return copy;
+        },
+        .optional => {
+            if (value) |v| return deepCopy(v, allocator);
+            return null;
+        },
+        .array => {
+            var copy: T = undefined;
+            for (value, 0..) |elem, i| {
+                copy[i] = deepCopy(elem, allocator);
+            }
+            return copy;
+        },
+        .pointer => |p| {
+            if (p.size == .Slice and p.child == u8) {
+                return allocator.dupe(u8, value) catch @panic("OOM");
+            }
+            return value;
+        },
+        else => return value,
+    }
 }
 
 test "api server" {
