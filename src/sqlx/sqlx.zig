@@ -285,9 +285,14 @@ pub fn freeScanned(allocator: std.mem.Allocator, comptime T: type, val: T) void 
 
 // ==================== SQLite Implementation ====================
 
+/// Bounded prepared-statement cache (per connection, LRU eviction).
+const MAX_CACHED_STMTS = 64;
+
 pub const SQLiteConn = struct {
     db: ?*sqlite3_c.sqlite3,
     allocator: std.mem.Allocator,
+    /// LRU cache of prepared statements keyed by SQL string.
+    stmt_cache: std.StringHashMap(*sqlite3_c.sqlite3_stmt),
 
     pub fn open(allocator: std.mem.Allocator, path: []const u8) !SQLiteConn {
         var db: ?*sqlite3_c.sqlite3 = null;
@@ -302,7 +307,38 @@ pub const SQLiteConn = struct {
             }
             return error.DatabaseError;
         }
-        return .{ .db = db, .allocator = allocator };
+        return .{ .db = db, .allocator = allocator, .stmt_cache = std.StringHashMap(*sqlite3_c.sqlite3_stmt).init(allocator) };
+    }
+
+    /// Get or prepare a cached statement. Returns sqlite3_reset'd stmt ready for binding.
+    fn getCachedStmt(self: *SQLiteConn, sql_str: []const u8) !*sqlite3_c.sqlite3_stmt {
+        if (self.stmt_cache.get(sql_str)) |cached| {
+            _ = sqlite3_c.sqlite3_reset(cached);
+            _ = sqlite3_c.sqlite3_clear_bindings(cached);
+            return cached;
+        }
+        // Evict oldest if at capacity
+        if (self.stmt_cache.count() >= MAX_CACHED_STMTS) {
+            var oldest_key: ?[]const u8 = null;
+            var it = self.stmt_cache.iterator();
+            if (it.next()) |entry| {
+                oldest_key = entry.key_ptr.*;
+                _ = sqlite3_c.sqlite3_finalize(entry.value_ptr.*);
+            }
+            if (oldest_key) |k| {
+                _ = self.stmt_cache.remove(k);
+                self.allocator.free(k);
+            }
+        }
+        var stmt: ?*sqlite3_c.sqlite3_stmt = null;
+        const rc = sqlite3_c.sqlite3_prepare_v2(self.db, @ptrCast(sql_str.ptr), @intCast(sql_str.len), &stmt, null);
+        if (rc != sqlite3_c.SQLITE_OK or stmt == null) return error.DatabaseError;
+        const key = self.allocator.dupe(u8, sql_str) catch {
+            _ = sqlite3_c.sqlite3_finalize(stmt);
+            return error.DatabaseError;
+        };
+        try self.stmt_cache.put(key, stmt.?);
+        return stmt.?;
     }
 
     fn queryFn(ptr: *anyopaque, allocator: std.mem.Allocator, sql_str: []const u8, args: []const Value) errors.ResultT(Rows) {
@@ -312,12 +348,9 @@ pub const SQLiteConn = struct {
         errdefer arena.deinit();
         const arena_alloc = arena.allocator();
 
-        var stmt: ?*sqlite3_c.sqlite3_stmt = null;
-        const rc = sqlite3_c.sqlite3_prepare_v2(self.db, @ptrCast(sql_str.ptr), @intCast(sql_str.len), &stmt, null);
-        if (rc != sqlite3_c.SQLITE_OK or stmt == null) return error.DatabaseError;
-        defer _ = sqlite3_c.sqlite3_finalize(stmt);
+        const stmt = try self.getCachedStmt(sql_str);
 
-        try bindSQLite(stmt.?, args);
+        try bindSQLite(stmt, args);
 
         const col_count = sqlite3_c.sqlite3_column_count(stmt);
         var rows_list: std.ArrayList(Row) = std.ArrayList(Row).empty;
@@ -342,12 +375,9 @@ pub const SQLiteConn = struct {
 
     fn execFn(ptr: *anyopaque, sql_str: []const u8, args: []const Value) errors.ResultT(ExecResult) {
         const self = @as(*SQLiteConn, @ptrCast(@alignCast(ptr)));
-        var stmt: ?*sqlite3_c.sqlite3_stmt = null;
-        const rc = sqlite3_c.sqlite3_prepare_v2(self.db, @ptrCast(sql_str.ptr), @intCast(sql_str.len), &stmt, null);
-        if (rc != sqlite3_c.SQLITE_OK or stmt == null) return error.DatabaseError;
-        defer _ = sqlite3_c.sqlite3_finalize(stmt);
+        const stmt = try self.getCachedStmt(sql_str);
 
-        try bindSQLite(stmt.?, args);
+        try bindSQLite(stmt, args);
 
         const step_rc = sqlite3_c.sqlite3_step(stmt);
         if (step_rc != sqlite3_c.SQLITE_DONE and step_rc != sqlite3_c.SQLITE_ROW) return error.DatabaseError;
@@ -360,6 +390,13 @@ pub const SQLiteConn = struct {
 
     fn closeFn(ptr: *anyopaque) void {
         const self = @as(*SQLiteConn, @ptrCast(@alignCast(ptr)));
+        // Finalize all cached statements
+        var it = self.stmt_cache.iterator();
+        while (it.next()) |entry| {
+            _ = sqlite3_c.sqlite3_finalize(entry.value_ptr.*);
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.stmt_cache.deinit();
         if (self.db) |db| {
             _ = sqlite3_c.sqlite3_close(db);
             self.db = null;

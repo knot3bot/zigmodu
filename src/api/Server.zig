@@ -155,6 +155,8 @@ pub const Context = struct {
     user_data: ?*anyopaque = null,
     validation_error_message: ?[]const u8 = null,
     stream: ?std.Io.net.Stream = null,
+    io: ?std.Io = null,
+    streaming: bool = false,
     upgraded: bool = false,
 
     // Middleware chain fields
@@ -285,15 +287,51 @@ pub const Context = struct {
 
     /// Start chunked transfer encoding for streaming large responses.
     /// Call writeChunk() for each chunk, then endStream() when done.
+    /// If a direct stream is available, data goes straight to the socket
+    /// without buffering in response_body.
     pub fn startChunked(self: *Context, status: u16, content_type: []const u8) !void {
         self.status_code = status;
         try self.setHeader("Transfer-Encoding", "chunked");
         try self.setHeader("Content-Type", content_type);
         self.responded = true;
+        self.streaming = true;
+        // Flush status line + headers to socket immediately
+        if (self.stream != null and self.io != null) {
+            try self.flushHeadersToSocket();
+        }
+    }
+
+    /// Write status line + headers directly to socket (for streamed responses).
+    fn flushHeadersToSocket(self: *Context) !void {
+        var write_buf: [4096]u8 = undefined;
+        var w = self.stream.?.writer(self.io.?, &write_buf);
+        var line_buf: [256]u8 = undefined;
+        const status_text = getStatusText(self.status_code);
+        const status_line = try std.fmt.bufPrint(&line_buf, "HTTP/1.1 {d} {s}\r\n", .{ self.status_code, status_text });
+        try w.interface.writeAll(status_line);
+        var hiter = self.response_headers.iterator();
+        while (hiter.next()) |entry| {
+            const header_line = try std.fmt.bufPrint(&line_buf, "{s}: {s}\r\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+            try w.interface.writeAll(header_line);
+        }
+        try w.interface.writeAll("\r\n");
+        try w.interface.flush();
     }
 
     /// Write a chunk in chunked transfer encoding.
+    /// Writes directly to socket when streaming, falls back to response_body buffer.
     pub fn writeChunk(self: *Context, data: []const u8) !void {
+        if (self.stream != null and self.io != null) {
+            var write_buf: [4096]u8 = undefined;
+            var w = self.stream.?.writer(self.io.?, &write_buf);
+            var size_buf: [32]u8 = undefined;
+            const size_hex = try std.fmt.bufPrint(&size_buf, "{x}\r\n", .{data.len});
+            try w.interface.writeAll(size_hex);
+            try w.interface.writeAll(data);
+            try w.interface.writeAll("\r\n");
+            try w.interface.flush();
+            return;
+        }
         const chunk_header = try std.fmt.allocPrint(self.allocator, "{x}\r\n", .{data.len});
         defer self.allocator.free(chunk_header);
         try self.response_body.appendSlice(self.allocator, chunk_header);
@@ -302,7 +340,15 @@ pub const Context = struct {
     }
 
     /// End chunked transfer encoding.
+    /// Writes directly to socket when streaming, falls back to response_body buffer.
     pub fn endStream(self: *Context) !void {
+        if (self.stream != null and self.io != null) {
+            var write_buf: [4096]u8 = undefined;
+            var w = self.stream.?.writer(self.io.?, &write_buf);
+            try w.interface.writeAll("0\r\n\r\n");
+            try w.interface.flush();
+            return;
+        }
         try self.response_body.appendSlice(self.allocator, "0\r\n\r\n");
     }
 
@@ -1204,6 +1250,9 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
         };
         defer ctx.deinit();
 
+        ctx.io = server.io;
+        ctx.stream = stream;
+
         // Transfer ownership: steal query/headers HashMaps from request
         // to avoid re-duplicating every key-value pair (saves ~10 allocs/req).
         // Both use arena_alloc so lifetimes are consistent.
@@ -1270,7 +1319,7 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
             ctx.sendError(408, "Request Timeout") catch {};
         }
 
-        if (ctx.responded) {
+        if (ctx.responded and !ctx.streaming) {
             writeResponse(server.io, stream, ctx.status_code, ctx.response_headers, ctx.response_body.items) catch |err| {
                 std.log.err("[HC] write error: {any}", .{err});
                 return;

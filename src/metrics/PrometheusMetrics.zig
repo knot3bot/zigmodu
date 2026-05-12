@@ -73,18 +73,34 @@ pub const PrometheusMetrics = struct {
         help: []const u8,
         buckets: std.array_list.Managed(f64),
         counts: std.array_list.Managed(u64),
-        sum: f64 = 0.0,
-        count: u64 = 0,
+        /// Thread-safe f64 sum via bitcast u64 + CAS (same pattern as Gauge).
+        sum_bits: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        /// Thread-safe observation count.
+        count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
 
         pub fn observe(self: *Histogram, value: f64) void {
-            self.sum += value;
-            self.count += 1;
-
+            // CAS loop for f64 sum
+            while (true) {
+                const old_bits = self.sum_bits.load(.monotonic);
+                const old_val: f64 = @bitCast(old_bits);
+                const new_val = old_val + value;
+                const new_bits: u64 = @bitCast(new_val);
+                if (self.sum_bits.cmpxchgWeak(old_bits, new_bits, .monotonic, .monotonic) == null) break;
+            }
+            _ = self.count.fetchAdd(1, .monotonic);
             for (self.buckets.items, 0..) |bucket, i| {
                 if (value <= bucket) {
-                    self.counts.items[i] += 1;
+                    _ = @atomicRmw(u64, &self.counts.items[i], .Add, 1, .monotonic);
                 }
             }
+        }
+
+        pub fn sum(self: *Histogram) f64 {
+            return @bitCast(self.sum_bits.load(.monotonic));
+        }
+
+        pub fn totalCount(self: *Histogram) u64 {
+            return self.count.load(.monotonic);
         }
     };
 
@@ -93,8 +109,10 @@ pub const PrometheusMetrics = struct {
         help: []const u8,
         quantiles: std.array_list.Managed(f64),
         values: std.array_list.Managed(f64),
-        sum: f64 = 0.0,
-        count: u64 = 0,
+        /// Thread-safe f64 sum via bitcast u64 + CAS (same pattern as Gauge).
+        sum_bits: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+        /// Thread-safe observation count (used for reservoir sampling index).
+        count: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
         max_age_seconds: u64 = 600,
         age_buckets: usize = 5,
         /// Hard cap on stored samples to prevent unbounded memory growth.
@@ -102,16 +120,30 @@ pub const PrometheusMetrics = struct {
         max_samples: usize = 500,
 
         pub fn observe(self: *Summary, value: f64) !void {
-            self.sum += value;
-            self.count += 1;
+            // CAS loop for f64 sum
+            while (true) {
+                const old_bits = self.sum_bits.load(.monotonic);
+                const old_val: f64 = @bitCast(old_bits);
+                const new_val = old_val + value;
+                const new_bits: u64 = @bitCast(new_val);
+                if (self.sum_bits.cmpxchgWeak(old_bits, new_bits, .monotonic, .monotonic) == null) break;
+            }
+            const n = self.count.fetchAdd(1, .monotonic);
 
             if (self.values.items.len < self.max_samples) {
                 try self.values.append(value);
             } else {
-                // Reservoir sampling: replace a random sample
-                const idx = @as(usize, @intCast(self.count % self.max_samples));
+                const idx = @as(usize, @intCast(n % self.max_samples));
                 self.values.items[idx] = value;
             }
+        }
+
+        pub fn totalSum(self: *Summary) f64 {
+            return @bitCast(self.sum_bits.load(.monotonic));
+        }
+
+        pub fn totalCount(self: *Summary) u64 {
+            return self.count.load(.monotonic);
         }
 
         /// Returns the q-th quantile (0.0-1.0) using QuickSelect O(n).
@@ -316,9 +348,9 @@ pub const PrometheusMetrics = struct {
             for (hist.buckets.items, hist.counts.items) |bucket, count| {
                 try buf.print("{s}_bucket{{le=\"{d:.3}\"}} {d}\n", .{ hist.name, bucket, count });
             }
-            try buf.print("{s}_bucket{{le=\"+Inf\"}} {d}\n", .{ hist.name, hist.count });
-            try buf.print("{s}_sum {d:.6}\n", .{ hist.name, hist.sum });
-            try buf.print("{s}_count {d}\n\n", .{ hist.name, hist.count });
+            try buf.print("{s}_bucket{{le=\"+Inf\"}} {d}\n", .{ hist.name, hist.totalCount() });
+            try buf.print("{s}_sum {d:.6}\n", .{ hist.name, hist.sum() });
+            try buf.print("{s}_count {d}\n\n", .{ hist.name, hist.totalCount() });
         }
 
         return buf.toOwnedSlice();
@@ -484,7 +516,7 @@ test "PrometheusMetrics histogram and summary" {
     const hist = try metrics.createHistogram("latency", "Request latency", &.{ 0.1, 0.5, 1.0 });
     hist.observe(0.05);
     hist.observe(0.7);
-    try std.testing.expectEqual(@as(u64, 2), hist.count);
+    try std.testing.expectEqual(@as(u64, 2), hist.totalCount());
 
     const summary = try metrics.createSummary("response_size", "Response size");
     try summary.observe(100.0);
