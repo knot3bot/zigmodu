@@ -128,8 +128,6 @@ pub const time = @import("core/Time.zig");
 pub const fx = @import("core/Fx.zig");
 pub const util = @import("util.zig");
 pub const Validator = @import("validation/ObjectValidator.zig").Validator;
-/// DEPRECATED: use `zigmodu.Validator` instead (ObjectValidator, not GoZero-style)
-pub const gozero_validator = @import("validation/Validator.zig");
 
 // ============================================================
 // 9. CONFIG

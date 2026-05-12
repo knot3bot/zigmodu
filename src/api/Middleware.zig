@@ -243,8 +243,8 @@ pub fn jwtAuth(secret: []const u8) api.Middleware {
 }
 
 /// CSRF protection using double-submit cookie pattern.
-/// GET/HEAD/OPTIONS requests pass through. State-changing methods (POST/PUT/DELETE/PATCH)
-/// require an X-CSRF-Token header matching the csrf_token cookie.
+/// GET/HEAD/OPTIONS pass through. State-changing methods require
+/// X-CSRF-Token header to match the csrf_token cookie value.
 pub fn csrf() api.Middleware {
     return .{
         .func = struct {
@@ -252,9 +252,22 @@ pub fn csrf() api.Middleware {
                 switch (ctx.method) {
                     .GET, .HEAD, .OPTIONS => return next(ctx),
                     else => {
-                        const cookie_token = ctx.header("Cookie") orelse "";
                         const header_token = ctx.header("X-CSRF-Token") orelse "";
-                        if (!std.mem.eql(u8, cookie_token, header_token) or cookie_token.len == 0) {
+                        const cookie_header = ctx.header("Cookie") orelse "";
+                        // Extract csrf_token=... from Cookie header
+                        var cookie_match = false;
+                        var it = std.mem.splitScalar(u8, cookie_header, ';');
+                        while (it.next()) |part| {
+                            const trimmed = std.mem.trim(u8, part, " ");
+                            if (std.mem.startsWith(u8, trimmed, "csrf_token=")) {
+                                const token = trimmed["csrf_token=".len..];
+                                if (std.mem.eql(u8, token, header_token) and token.len > 0) {
+                                    cookie_match = true;
+                                }
+                                break;
+                            }
+                        }
+                        if (!cookie_match) {
                             try ctx.sendError(403, "CSRF token mismatch");
                             return;
                         }

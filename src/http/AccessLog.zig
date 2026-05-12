@@ -1,13 +1,13 @@
 const std = @import("std");
 const Time = @import("../core/Time.zig");
 
-/// 结构化访问日志中间件
+/// Structured access log middleware.
 ///
-/// 记录每个 HTTP 请求的:
-///   - 时间戳
-///   - 方法 + 路径
-///   - 状态码
-///   - 延迟 (毫秒)
+/// Logs per-request: timestamp, method+path, status, latency_ms.
+/// Authorization, X-API-Key, and Cookie headers are automatically
+/// redacted to prevent credential leakage in log output.
+///
+/// Sensitive headers redacted: Authorization, X-API-Key, Cookie, Set-Cookie
 ///   - 请求体大小
 ///   - 响应体大小
 ///   - User-Agent
