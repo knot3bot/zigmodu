@@ -13,14 +13,18 @@ pub const CorsConfig = struct {
     max_age: u32 = 86400,
 };
 
-/// CORS middleware
+/// CORS middleware — config stored at module scope to avoid heap allocation.
 pub fn cors(config: CorsConfig) api.Middleware {
-    const cfg_ptr = std.heap.page_allocator.create(CorsConfig) catch unreachable;
-    cfg_ptr.* = config;
+    // Module-level storage: single allocation lived for server lifetime.
+    // Zig 0.16: avoid page_allocator.create/unreachable pattern.
+    const S = struct {
+        var stored: CorsConfig = .{};
+    };
+    S.stored = config;
     return .{
         .func = struct {
-            fn mw(ctx: *api.Context, next: api.HandlerFn, user_data: ?*anyopaque) anyerror!void {
-                const cfg: *const CorsConfig = @ptrCast(@alignCast(user_data.?));
+            fn mw(ctx: *api.Context, next: api.HandlerFn, _: ?*anyopaque) anyerror!void {
+                const cfg: *const CorsConfig = &S.stored;
                 const origin = ctx.headers.get("Origin") orelse "";
 
                 // Validate origin against whitelist; reject if not allowed
@@ -61,7 +65,6 @@ pub fn cors(config: CorsConfig) api.Middleware {
                 try next(ctx);
             }
         }.mw,
-        .user_data = @ptrCast(cfg_ptr),
     };
 }
 

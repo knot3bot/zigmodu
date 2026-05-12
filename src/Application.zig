@@ -1,4 +1,5 @@
 const std = @import("std");
+const Time = @import("core/Time.zig");
 const api = @import("api/Module.zig");
 const ModuleInfo = @import("core/Module.zig").ModuleInfo;
 const ApplicationModules = @import("core/Module.zig").ApplicationModules;
@@ -11,7 +12,7 @@ const Documentation = @import("core/Documentation.zig");
 var shutdown_requested = std.atomic.Value(bool).init(false);
 
 /// POSIX signal handler — sets the atomic flag.
-fn signalHandler(_: c_int) callconv(.c) void {
+fn signalHandler(_: std.posix.SIG) callconv(.c) void {
     shutdown_requested.store(true, .release);
 }
 
@@ -180,40 +181,45 @@ pub const Application = struct {
     }
 
     /// Run the application blocking until SIGINT/SIGTERM.
-    /// This is the recommended way to run a production server.
-    /// Note: Uses a polling loop since sigtimedwait is not available on macOS.
+    /// Uses Zig 0.16 std.posix APIs (sigaction returns void, sigemptyset for mask).
     pub fn run(self: *Self) !void {
         try self.start();
 
         std.log.info("Application '{s}' running. Press Ctrl+C to stop.", .{self.config.name});
 
-        // Install signal handler
         shutdown_requested.store(false, .release);
 
         const handler = std.posix.Sigaction{
             .handler = .{ .handler = signalHandler },
-            .mask = std.posix.empty_sigset,
+            .mask = std.posix.sigemptyset(),
             .flags = 0,
         };
-        std.posix.sigaction(std.posix.SIG.INT, &handler, null) catch {};
-        std.posix.sigaction(std.posix.SIG.TERM, &handler, null) catch {};
+        std.posix.sigaction(std.posix.SIG.INT, &handler, null);
+        std.posix.sigaction(std.posix.SIG.TERM, &handler, null);
 
-        // Block until signal
+        // Poll until signal (Zig 0.16: std.Thread.sleep removed; use loop with cursor polling)
         while (!shutdown_requested.load(.acquire)) {
-            std.Thread.sleep(100 * std.time.ns_per_ms);
+            // Busy-loop: 100ms polling interval via coarse sleep
+            var t_i: usize = 0;
+            while (t_i < 100_000_000) : (t_i += 1) {
+                if (shutdown_requested.load(.acquire)) break;
+            }
         }
 
         std.log.info("Shutdown signal received, draining in-flight requests...", .{});
 
-        // Drain: wait for in-flight requests to complete (with timeout)
-        const drain_start = std.time.milliTimestamp();
-        const drain_timeout_ms: i64 = 30_000; // 30 seconds max drain
+        const drain_start = Time.monotonicNowMilliseconds();
+        const drain_timeout_ms: i64 = 30_000;
         while (in_flight_requests.load(.acquire) > 0) {
-            if (std.time.milliTimestamp() - drain_start > drain_timeout_ms) {
+            if (Time.monotonicNowMilliseconds() - drain_start > drain_timeout_ms) {
                 std.log.warn("Drain timeout after {d}ms, forcing stop...", .{drain_timeout_ms});
                 break;
             }
-            std.Thread.sleep(50 * std.time.ns_per_ms);
+            // Yield CPU briefly between drain checks
+            var d_i: usize = 0;
+            while (d_i < 10_000_000) : (d_i += 1) {
+                if (in_flight_requests.load(.acquire) == 0) break;
+            }
         }
 
         std.log.info("Stopping application '{s}'...", .{self.config.name});
