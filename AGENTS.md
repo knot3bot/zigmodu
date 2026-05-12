@@ -1,344 +1,174 @@
-# ZigModu Framework Agent Guide
+# ZigModu — AI Agent Guide
 
-## Project Overview
-ZigModu is a modular application framework for Zig 0.16.0, aligned with Spring Modulith core features. **v0.8.0 — 93/100 production readiness, 282 tests passing.**
+## Quick Reference
 
-## Critical Constraints
-- **Zig Version**: Must use Zig 0.16.0 exactly
-- **No GC**: Framework avoids hidden allocations; uses explicit memory management
-- **Compile-time Validation**: Module dependencies checked at compile time where possible
-- **Explicit Lifecycle**: Modules must implement `init() !void` and `deinit() void`
-- **Time Source**: Always use `@import("core/Time.zig").monotonicNowSeconds()` — NEVER hardcode `const now = 0`
-- **ArrayList Pattern**: Use `std.ArrayList(T).empty` + `.deinit(allocator)` + `.append(allocator, item)` in Zig 0.16.0
-
-## Project Structure
-```
-zigmodu/
-├── build.zig                  # Build system (Zig 0.16.0 syntax)
-├── build.zig.zon              # Dependency management
-├── AGENTS.md                  # This file
-├── Dockerfile                 # Multi-stage Docker build
-├── docker-compose.yml         # Full stack (PG + Redis + Vault + Jaeger)
-├── src/
-│   ├── root.zig               # Framework public API exports (PRIMARY/ADVANCED/DEPRECATED)
-│   ├── Application.zig        # Application builder + shutdown hooks
-│   ├── api/                   # Public API
-│   │   ├── Module.zig         # Module and Modulith structs
-│   │   ├── Server.zig         # Async HTTP server + router
-│   │   └── Middleware.zig      # Middleware framework
-│   ├── core/                  # Core framework
-│   │   ├── Module.zig         # ModuleInfo, ApplicationModules
-│   │   ├── ModuleScanner.zig  # Compile-time module scanning
-│   │   ├── ModuleValidator.zig # Dependency validation
-│   │   ├── ModuleInteractionVerifier.zig # Interaction model verification
-│   │   ├── ModuleBoundary.zig # Module boundary enforcement
-│   │   ├── ModuleContract.zig # Formal module contracts
-│   │   ├── EventBus.zig       # Type-safe event bus
-│   │   ├── DistributedEventBus.zig # Cross-node event communication
-│   │   ├── Lifecycle.zig      # startAll/stopAll functions
-│   │   ├── Time.zig           # Centralized monotonic time utility
-│   │   ├── Documentation.zig  # PlantUML doc generation
-│   │   ├── GrpcTransport.zig  # gRPC service registry + proto parser
-│   │   ├── KafkaConnector.zig # Kafka producer/consumer
-│   │   ├── SagaOrchestrator.zig # Saga auto-compensation orchestrator
-│   │   ├── DistributedTransaction.zig # 2PC + Saga transactions
-│   │   ├── HealthEndpoint.zig # K8s health probes
-│   │   ├── HotReloader.zig    # File-watch hot reload
-│   │   ├── PluginManager.zig  # Plugin system
-│   │   └── ...
-│   ├── http/                  # HTTP & API
-│   │   ├── HttpClient.zig     # HTTP client with pooling
-│   │   ├── Idempotency.zig    # Idempotency middleware + store
-│   │   └── OpenApi.zig        # OpenAPI 3.x document generator
-│   ├── migration/             # Database migrations
-│   │   └── Migration.zig      # Flyway-style migration runner
-│   ├── secrets/               # Secrets management
-│   │   └── SecretsManager.zig # Multi-source secrets with Vault
-│   ├── resilience/            # Resilience patterns
-│   │   ├── CircuitBreaker.zig
-│   │   ├── RateLimiter.zig
-│   │   ├── Retry.zig
-│   │   └── LoadShedder.zig
-│   ├── sqlx/                  # Database drivers (PG/MySQL/SQLite)
-│   ├── redis/                 # Redis client
-│   ├── tenant/                # Multi-tenancy + sharding
-│   ├── security/              # Auth (JWT/RBAC/PasswordEncoder)
-│   ├── di/                    # DI container
-│   ├── config/                # Configuration loaders
-│   ├── log/                   # Structured logging
-│   ├── test/                  # Testing utilities
-│   │   ├── ContractTest.zig   # Pact-style contract testing
-│   │   ├── IntegrationTest.zig
-│   │   └── ModuleTest.zig
-│   └── ...
-├── docs/                      # Documentation
-├── examples/                  # Example projects
-├── shopdemo/                  # Full reference app (42 modules, 790+ APIs)
-└── .github/workflows/ci.yml   # CI/CD pipeline
-```
-
-## Essential Commands
-- `zig build` - Compile the framework
-- `zig build test` - Run tests (282 passed)
-- `zig build run` - Run example application
-- `zig build benchmark` - Run performance benchmarks
-- `docker compose up -d` - Start full stack
-
-## Framework Conventions (CRITICAL)
-
-### 1. Module Definition
 ```zig
-const api = @import("zigmodu").api;
+const zmodu = @import("zigmodu");
 
-pub const info = api.Module{
+// Domain imports (canonical)
+const http = zmodu.http;       // Server, Context, RouteGroup
+const data = zmodu.data;       // SQLx, ORM, Cache, Redis
+const sec  = zmodu.security;   // Auth, RBAC, Secrets
+const obs  = zmodu.observability; // Metrics, Tracing, Logging
+
+// Module definition (required contract)
+pub const info = zmodu.api.Module{ .name = "my-module", .description = "...", .dependencies = &.{} };
+pub fn init() !void { ... }
+pub fn deinit() void { ... }
+
+// App builder
+var app = try zmodu.builder(allocator, io).withName("app").build(.{ModuleA, ModuleB});
+defer app.deinit();
+try app.start();
+defer app.stop();
+```
+
+## Critical Rules (MUST follow)
+
+### Zig 0.16.0 — what's REMOVED
+| Removed | Replacement |
+|---------|-------------|
+| `std.Thread.sleep()` | busy-loop or `std.Io.sleep()` |
+| `std.Thread.Mutex` | `std.Io.Mutex` — needs `io` param: `.lock(io)` / `.unlock(io)` |
+| `std.Thread.WaitGroup` | no replacement; use `std.Io.Group` |
+| `std.time.milliTimestamp()` | `@import("core/Time.zig").monotonicNowMilliseconds()` |
+| `std.time.microTimestamp()` | same |
+| `std.os.getpid()` | `@intFromPtr(&seed)` for entropy |
+| `std.fs.cwd()` | `std.Io.Dir.cwd(io)` |
+| `std.fs.File` | `std.Io.File` — needs `io` param everywhere |
+| `std.posix.empty_sigset` | `std.posix.sigemptyset()` |
+| `sigaction()` returns error | returns `void` in Zig 0.16 |
+| `ArrayList(T).init(alloc)` | `ArrayList(T).empty` + pass allocator to each method |
+| `file.writeAll(data)` | `file.writeStreamingAll(io, data)` |
+| `buf.writer(allocator)` | `allocPrint + appendSlice` pattern |
+| `std.crypto.random.bytes()` | DELETED — use multi-source seed + Csprng |
+
+### Zig 0.16.0 — patterns to USE
+```zig
+// ArrayList: .empty + explicit allocator
+var list = std.ArrayList(T).empty;
+defer list.deinit(allocator);
+try list.append(allocator, item);
+
+// Mutex: needs io
+var mu: std.Io.Mutex = .init;
+mu.lock(io) catch return;
+defer mu.unlock(io);
+
+// File I/O: always pass io
+const file = try std.Io.Dir.cwd(io).createFile(io, path, .{});
+defer file.close(io);
+try file.writeStreamingAll(io, data);
+
+// Env vars: use std.process.Environ
+var iter = init.environ.iterator();
+while (iter.next()) |entry| {
+    if (std.mem.eql(u8, entry.key_ptr.*, "KEY")) { ... }
+}
+
+// Time: always use Time.zig
+const now = Time.monotonicNowSeconds();
+const now_ms = Time.monotonicNowMilliseconds();
+```
+
+## Architecture Rules
+
+### Imports
+- NEVER use `zigmodu.http_server` — use `zigmodu.http.Context`
+- NEVER use `zigmodu.orm.Orm(...)` — use `zigmodu.data.Repository(T)`
+- NEVER use `zigmodu.PasswordEncoder` — use `zigmodu.security.PasswordEncoder`
+- Domain files are CANONICAL: `http.zig`, `data.zig`, `security.zig`, `observability.zig`
+
+### Module lifecycle
+```zig
+// Every module MUST satisfy this contract:
+pub const info = zmodu.api.Module{
     .name = "order",
     .description = "Order management module",
-    .dependencies = &.{"inventory"},
-    .is_internal = false,
+    .dependencies = &.{"user", "product"},  // module names, NOT import paths
 };
 
 pub fn init() !void {
-    std.log.info("Order module initialized", .{});
+    // Called at startup in dependency order (deps before dependents)
 }
 
 pub fn deinit() void {
-    std.log.info("Order module cleaned up", .{});
+    // Called at shutdown in REVERSE dependency order
 }
 ```
 
-### 2. Application Entry Point
+### Error handling
+- Use `ZigModuError` from `zmodu.ZigModuError` (NOT raw `error{...}`)
+- Log errors — never `catch {}` on I/O or DB operations
+- Use `zmodu.Result(T)` for fallible operations
+
+### Security
+- Passwords: `sec.PasswordEncoder` (PBKDF2-HMAC-SHA256, 100K iterations)
+- JWT: `sec.SecurityModule` (HS256, timing-safe comparison)
+- Secrets: `sec.SecretsManager` (env > file > vault > default priority)
+- CSRF: `http_middleware.csrf()` double-submit cookie pattern
+- CSPRNG: multi-source entropy, never single-timestamp seed
+
+## Generated Code Patterns
+
+### HTTP API handler
 ```zig
-const std = @import("std");
-const zigmodu = @import("zigmodu");
+const http = @import("zigmodu").http;
 
-const order = @import("order/module.zig");
-const inventory = @import("inventory/module.zig");
+pub fn registerRoutes(group: *http.RouteGroup) !void {
+    try group.get("/users/{id}", getUser, null);
+}
 
-pub fn main(init: std.process.Init) !void {
-    const allocator = init.gpa;
-
-    var modules = try zigmodu.scanModules(allocator, .{ order, inventory });
-    defer modules.deinit();
-
-    try zigmodu.validateModules(&modules);
-    try zigmodu.generateDocs(&modules, "modules.puml", allocator);
-    try zigmodu.startAll(&modules);
-    defer zigmodu.stopAll(&modules);
+fn getUser(ctx: *http.Context) !void {
+    const id = try ctx.paramInt("id");
+    const page = ctx.queryInt("page", 0);
+    // Use ctx.json(200, body) — NOT ctx.sendSuccess/sendFail (deprecated)
 }
 ```
 
-### 3. Using Middleware
+### Database
 ```zig
-const zigmodu = @import("zigmodu");
+const data = @import("zigmodu").data;
 
-// Tracing middleware
-server.addMiddleware(.{ .func = zigmodu.tracing_middleware.tracing() });
+// One-step init (preferred)
+var db = try data.Client.open(allocator, io, .{ .driver = .sqlite, .path = "app.db" });
+defer db.deinit();
 
-// Idempotency middleware
-var idempotency_store = zigmodu.IdempotencyStore.init(allocator, 100000);
-defer idempotency_store.deinit();
-server.addMiddleware(.{ .func = zigmodu.idempotencyMiddleware(&idempotency_store) });
+// Repository pattern
+const repo = data.Repository(model.User){ .backend = backend };
+const users = try repo.list(page, size);
 ```
 
-### 4. Database Migrations
+### Events
 ```zig
-var runner = zigmodu.MigrationRunner.init(allocator);
-defer runner.deinit();
-
-try runner.addMigration(20260101000000, "create users table",
-    \\CREATE TABLE users (id BIGINT PRIMARY KEY, name VARCHAR(255));
-);
+var bus = zmodu.EventBus(MyEvent).init(allocator);
+try bus.subscribe(myHandler);
+bus.publish(.{ .id = 42 });
 ```
 
-### 5. Secrets Management
-```zig
-var secrets = zigmodu.SecretsManager.init(allocator);
-defer secrets.deinit();
-
-// Load from env (highest priority)
-try secrets.loadFromEnv("APP_");
-
-// Load from file
-try secrets.loadFromEnvContent(file_content);
-
-// Set defaults (lowest priority)
-try secrets.setDefault("DB_HOST", "localhost");
-
-// Get with fallback
-const db_host = secrets.getOrDefault("DB_HOST", "127.0.0.1");
+## File Organization
+```
+src/modules/{name}/
+├── model.zig          # Structs, table mappings
+├── persistence.zig    # Repository / data access
+├── service.zig        # Business logic
+├── api.zig            # HTTP handlers (registerRoutes)
+├── events.zig         # EventBus types + publisher
+├── module.zig         # Module lifecycle + dependencies
+└── root.zig           # Barrel re-exports
 ```
 
-### 6. Saga Orchestrator
+## Testing
 ```zig
-var orchestrator = zigmodu.SagaOrchestrator.init(allocator);
-defer orchestrator.deinit();
-
-try orchestrator.registerSaga("create-order", &.{
-    .{ .name = "validate", .action = validateOrder, .compensation = rollbackValidate },
-    .{ .name = "process",  .action = processPayment, .compensation = refundPayment },
-});
-
-_ = orchestrator.execute("create-order") catch |err| {
-    // Compensation executed automatically
-    std.log.err("Saga failed: {}", .{err});
-};
-```
-
-### 7. Kafka Integration
-```zig
-var producer = zigmodu.KafkaProducer.init(allocator, .{
-    .bootstrap_servers = "kafka:9092",
-});
-defer producer.deinit();
-
-try producer.send(.{
-    .topic = "orders.created",
-    .value = "{\"order_id\":123}",
-    .headers = &.{},
-    .timestamp = zigmodu.time.monotonicNowSeconds(),
-});
-```
-
-### 8. gRPC Service
-```zig
-var registry = zigmodu.GrpcServiceRegistry.init(allocator);
-defer registry.deinit();
-
-try registry.registerService("order.OrderService");
-try registry.registerMethod("order.OrderService", "CreateOrder", .unary, handleCreateOrder);
-```
-
-### 9. OpenAPI Documentation
-```zig
-var gen = zigmodu.OpenApiGenerator.init(allocator, "My API", "1.0.0", "API description");
-defer gen.deinit();
-
-try gen.addEndpoint(.{
-    .method = .GET,
-    .path = "/users/{id}",
-    .summary = "Get user by ID",
-    .tags = &.{"users"},
-    .responses = &.{.{ .status_code = 200, .description = "User object" }},
-});
-
-const openapi_json = try gen.generate();
-```
-
-### 10. Contract Testing
-```zig
-var runner = zigmodu.ContractTestRunner.init(allocator);
-defer runner.deinit();
-
-try runner.registerContract(.{
-    .name = "order-create",
-    .consumer = "order-service",
-    .provider = "payment-service",
-    .version = "1.0",
-    .interaction_type = .http,
-    .request = .{ .method = "POST", .path = "/api/payments" },
-    .response = .{ .status = 201, .body_contains = "paid" },
-});
-
-const result = try runner.verifyContract("order-create", 201, response_body, &.{});
-try std.testing.expect(result.passed);
-```
-
-### 11. Module Interaction Verification
-```zig
-var verifier = zigmodu.ModuleInteractionVerifier.init(allocator, .{
-    .max_dependencies_per_module = 10,
-    .allow_circular_deps = false,
-});
-defer verifier.deinit();
-
-try verifier.addModuleRule("order", "payment", &.{ .event_driven, .api_call }, "order→payment");
-```
-
-## build.zig.zon Format (Zig 0.16.0)
-```zig
-.{
-    .name = .zigmodu,  // MUST be enum literal, not string!
-    .version = "0.8.0",
-    .fingerprint = 0x7aa42d07b32f8d53,
-    .minimum_zig_version = "0.16.0",
-    .dependencies = .{},
-    .paths = .{
-        "build.zig",
-        "build.zig.zon",
-        "src",
-    },
+test "my test" {
+    const allocator = std.testing.allocator;
+    // Use std.testing.io for I/O-dependent tests
+    // Use std.testing.tmpDir() for file-dependent tests
 }
 ```
 
-## build.zig Format (Zig 0.16.0)
-```zig
-const std = @import("std");
-
-pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
-    const exe = b.addExecutable(.{
-        .name = "app",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    b.installArtifact(exe);
-}
-```
-
-## Common Mistakes to Avoid
-
-1. **build.zig.zon**: `.name` must be enum literal (`.zigmodu`), NOT string (`"zigmodu"`)
-2. **build.zig**: Use `root_module = b.createModule(...)` NOT `root_source_file = ...`
-3. **Module dependencies**: Use `&.{}` syntax for empty dependencies
-4. **scanModules signature**: `scanModules(allocator, .{ mod1, mod2 })` - allocator FIRST
-5. **Time**: Always use `@import("core/Time.zig").monotonicNowSeconds()` — NEVER `const now = 0`
-6. **ModuleInfo.init**: Takes 3 args `(name, desc, deps)` — ptr is now optional and defaults to null
-7. **ArrayList**: Use `std.ArrayList(T).empty` + `.deinit(allocator)` + `.append(allocator, item)` in Zig 0.16.0
-8. **File I/O**: Use `std.Io.Dir.cwd().openFile(io, path, .{})` with explicit `io` parameter
-
-## Verification
-- ✅ `zig build` compiles successfully
-- ✅ `zig build test` — 282 passed, 5 skipped, 2 failed (pre-existing)
-- ✅ `zig build run` outputs module validation and startup messages
-- ✅ `modules.puml` is generated with correct PlantUML syntax
-- ✅ Module init/deinit functions are properly called
-- ✅ Memory is properly cleaned up
-- ✅ All timestamps use real monotonic time
-
-## Module Inventory
-
-### Core (100% complete)
-`Module.zig`, `ModuleScanner.zig`, `ModuleValidator.zig`, `ModuleInteractionVerifier.zig`, `ModuleBoundary.zig`, `ModuleContract.zig`, `ModuleCapabilities.zig`, `Lifecycle.zig`, `Time.zig`, `EventBus.zig`, `Documentation.zig`, `Error.zig`, `ApplicationObserver.zig`, `ApplicationView.zig`
-
-### Event System (100% complete)
-`DistributedEventBus.zig`, `TransactionalEvent.zig`, `EventLogger.zig`, `EventPublisher.zig`, `EventStore.zig`, `AutoEventListener.zig`, `ModuleListener.zig`
-
-### HTTP & API (95% complete)
-`HttpClient.zig`, `Idempotency.zig`, `OpenApi.zig`, `api/Server.zig`, `api/Middleware.zig`, `api/middleware/Tracing.zig`
-
-### Distributed (90% complete)
-`ClusterMembership.zig`, `DistributedTransaction.zig`, `GrpcTransport.zig`, `KafkaConnector.zig`, `SagaOrchestrator.zig`, `WebSocket.zig`, `WebMonitor.zig`
-
-### Resilience (100% complete)
-`CircuitBreaker.zig`, `RateLimiter.zig`, `Retry.zig`, `LoadShedder.zig`
-
-### Data (100% complete)
-`sqlx/sqlx.zig`, `persistence/Orm.zig`, `migration/Migration.zig`, `cache/CacheManager.zig`, `redis/redis.zig`, `pool/Pool.zig`
-
-### Security (100% complete)
-`SecurityModule.zig`, `SecurityScanner.zig`, `Rbac.zig`, `PasswordEncoder.zig`, `secrets/SecretsManager.zig`, `tenant/TenantContext.zig`, `tenant/ShardRouter.zig`
-
-### Observability (100% complete)
-`DistributedTracer.zig`, `PrometheusMetrics.zig`, `AutoInstrumentation.zig`, `StructuredLogger.zig`, `HealthEndpoint.zig`
-
-### DevOps (100% complete)
-`HotReloader.zig`, `PluginManager.zig`, `ArchitectureTester.zig`, `Dockerfile`, `docker-compose.yml`, `.github/workflows/ci.yml`
-
-### Testing (100% complete)
-`ModuleTest.zig`, `IntegrationTest.zig`, `ContractTest.zig`, `Benchmark.zig`, `ModulithTest.zig`
+## Version
+- Framework: v0.9.4
+- Zig: 0.16.0
+- Tests: ~420 passing, 0 failures
+- Score: 92/100 production readiness
