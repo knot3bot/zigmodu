@@ -114,15 +114,41 @@ pub const PrometheusMetrics = struct {
             }
         }
 
-        /// Returns the q-th quantile (0.0-1.0).
-        /// NOTE: O(n log n) — sorts values on every call. Avoid in hot paths.
+        /// Returns the q-th quantile (0.0-1.0) using QuickSelect O(n).
+        /// Avoids the full sort that was used in v0.9.4 (O(n log n)).
         pub fn getQuantile(self: *Summary, q: f64) f64 {
-            if (self.values.items.len == 0) return 0.0;
+            const n = self.values.items.len;
+            if (n == 0) return 0.0;
+            if (n == 1) return self.values.items[0];
 
-            std.sort.insertion(f64, self.values.items, {}, std.sort.asc(f64));
+            const target = @min(@as(usize, @intFromFloat(@as(f64, @floatFromInt(n)) * q)), n - 1);
+            const items = self.values.items;
 
-            const index = @as(usize, @intFromFloat(@as(f64, @floatFromInt(self.values.items.len)) * q));
-            return self.values.items[@min(index, self.values.items.len - 1)];
+            // QuickSelect: O(n) expected time, in-place
+            var lo: usize = 0;
+            var hi: usize = n - 1;
+            while (lo < hi) {
+                const pivot = items[lo + (hi - lo) / 2];
+                var i: usize = lo;
+                var j: usize = hi;
+                while (i <= j) {
+                    while (items[i] < pivot) : (i += 1) {}
+                    while (items[j] > pivot) : (j -= 1) {}
+                    if (i <= j) {
+                        std.mem.swap(f64, &items[i], &items[j]);
+                        i += 1;
+                        j -= 1;
+                    }
+                }
+                if (target <= j) {
+                    hi = j;
+                } else if (target >= i) {
+                    lo = i;
+                } else {
+                    break;
+                }
+            }
+            return items[target];
         }
     };
 
