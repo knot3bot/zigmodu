@@ -603,7 +603,7 @@ const StreamReader = struct {
     }
 
     fn readAll(self: *StreamReader, out: []u8) !usize {
-        return self.reader.interface.readAll(out) catch |err| switch (err) {
+        return self.reader.readAll(out) catch |err| switch (err) {
             error.EndOfStream, error.ReadFailed => return 0,
         };
     }
