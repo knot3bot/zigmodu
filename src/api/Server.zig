@@ -603,10 +603,18 @@ const StreamReader = struct {
     }
 
     fn readAll(self: *StreamReader, out: []u8) !usize {
-        self.reader.interface.readSliceAll(out) catch |err| switch (err) {
-            error.EndOfStream, error.ReadFailed => return 0,
-        };
-        return out.len;
+        // Use Reader.read (not Interface.readSliceAll) — the Reader's internal
+        // buffer may already contain body residue from takeDelimiter's lookahead.
+        // Interface methods bypass the buffer; Reader methods drain it first.
+        var total: usize = 0;
+        while (total < out.len) {
+            const n = self.reader.read(out[total..]) catch |err| switch (err) {
+                error.EndOfStream, error.ReadFailed => return total,
+            };
+            if (n == 0) return total;
+            total += n;
+        }
+        return total;
     }
 };
 
@@ -688,7 +696,7 @@ const RequestParser = struct {
 
         // Read body if Content-Length present
         var body: ?[]const u8 = null;
-        if (headers.get("Content-Length")) |len_str| {
+        if (headers.get("content-length")) |len_str| {
             const content_len = std.fmt.parseInt(usize, len_str, 10) catch {
                 return error.InvalidContentLength;
             };
@@ -1306,7 +1314,7 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
 
         // Parse form body
         if (request.body) |body| {
-            const ctype = ctx.headers.get("Content-Type") orelse "";
+            const ctype = ctx.headers.get("content-type") orelse "";
             if (std.mem.startsWith(u8, ctype, "application/x-www-form-urlencoded")) {
                 ctx.form = parseFormBody(arena_alloc, body) catch null;
             }
@@ -1364,7 +1372,7 @@ fn connFiber(server: *Server, stream: std.Io.net.Stream, allocator: std.mem.Allo
         }
 
         // Keep-alive decision: default keep-alive unless Connection: close
-        if (request.headers.get("Connection")) |conn_val| {
+        if (ctx.headers.get("connection")) |conn_val| {
             if (std.ascii.eqlIgnoreCase(conn_val, "close")) return;
         }
     }

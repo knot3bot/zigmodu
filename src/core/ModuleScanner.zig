@@ -65,6 +65,7 @@ fn visit(comptime name: []const u8, comptime modules: anytype, comptime current_
     }
 
     // Find module info
+    @setEvalBranchQuota(5000);
     const mod_info = comptime blk: {
         for (modules) |m| {
             if (std.mem.eql(u8, m.info.name, name)) break :blk m.info;
