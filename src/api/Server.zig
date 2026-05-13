@@ -482,14 +482,11 @@ pub const Context = struct {
         return deepCopy(parsed.value, self.allocator);
     }
 
-    /// Send JSON from struct — streaming write, zero alloc.
-    /// Uses Zig 0.16 std.json.WriteStream for O(1) memory.
+    /// Send JSON from struct — streaming write via std.json.stringify, zero alloc.
     pub fn jsonStruct(self: *Context, status: u16, value: anytype) !void {
         self.status_code = status;
         try self.setHeader("Content-Type", "application/json");
-        var jw = std.json.WriteStream.init(self.allocator, self.response_body.writer(), .{});
-        defer jw.deinit();
-        try jw.write(value);
+        try std.json.stringify(value, .{}, self.response_body.writer());
         self.responded = true;
     }
 
