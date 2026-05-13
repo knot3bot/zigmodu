@@ -83,7 +83,19 @@ pub const NatsClient = struct {
         if (self.config.token) |t| try w.print(",\"auth_token\":\"{s}\"", .{t});
         try w.writeAll("}");
 
-        try self.writeFrame("CONNECT", connect_json.items);
+        // CONNECT sends JSON inline: CONNECT <json>\r\n (no length prefix)
+        var cbuf: [4096]u8 = undefined;
+        var cw = stream.writer(self.io, &cbuf);
+        try cw.interface.writeAll("CONNECT ");
+        try cw.interface.writeAll(connect_json.items);
+        try cw.interface.writeAll("\r\n");
+        try cw.interface.flush();
+
+        // Drain server INFO line (NATS sends on every new connection)
+        var rbuf: [8192]u8 = undefined;
+        var cr = std.Io.net.Stream.Reader.init(stream, self.io, &rbuf);
+        _ = cr.interface.takeDelimiter('\n') catch return error.DatabaseError;
+
         self.stream = stream;
     }
 
@@ -192,22 +204,6 @@ pub const NatsClient = struct {
         var read_buf: [128]u8 = undefined;
         const n = s.read(self.io, &read_buf) catch return error.DatabaseError;
         if (n < 6 or !std.mem.eql(u8, read_buf[0..6], "PONG\r\n")) return error.DatabaseError;
-    }
-
-    /// Internal: write a NATS protocol frame.
-    fn writeFrame(self: *Self, cmd: []const u8, payload: []const u8) !void {
-        const s = self.stream orelse return error.NotConnected;
-        var write_buf: [4096]u8 = undefined;
-        var w = s.writer(self.io, &write_buf);
-        try w.interface.writeAll(cmd);
-        try w.interface.writeAll(" ");
-        var size_buf: [32]u8 = undefined;
-        const size_str = try std.fmt.bufPrint(&size_buf, "{d}", .{payload.len});
-        try w.interface.writeAll(size_str);
-        try w.interface.writeAll("\r\n");
-        try w.interface.writeAll(payload);
-        try w.interface.writeAll("\r\n");
-        try w.interface.flush();
     }
 
     /// Internal: parse incoming NATS messages and dispatch to callbacks.
