@@ -588,35 +588,45 @@ pub const PostgresConn = struct {
 
     fn execParams(self: *PostgresConn, sql_str: []const u8, args: []const Value) ?*libpq_c.PGresult {
         if (self.conn == null) return null;
-        const paramValues = self.allocator.alloc(?[*]const u8, args.len) catch return null;
-        const paramLengths = self.allocator.alloc(c_int, args.len) catch {
+
+        const param_count = args.len;
+        const paramValues = self.allocator.alloc(?[*]const u8, param_count) catch return null;
+        const paramLengths = self.allocator.alloc(c_int, param_count) catch {
             self.allocator.free(paramValues);
             return null;
         };
-        // Note: allocated strings (int/float) may leak in this simplified implementation.
+        const paramAllocs = self.allocator.alloc(?[]const u8, param_count) catch {
+            self.allocator.free(paramValues);
+            self.allocator.free(paramLengths);
+            return null;
+        };
+        @memset(paramAllocs, null);
+
+        defer {
+            for (paramAllocs) |maybe_alloc| {
+                if (maybe_alloc) |a| self.allocator.free(a);
+            }
+            self.allocator.free(paramAllocs);
+            self.allocator.free(paramLengths);
+            self.allocator.free(paramValues);
+        }
+
         for (args, 0..) |arg, i| {
             paramValues[i] = switch (arg) {
                 .null => null,
                 .int => |v| blk: {
-                    const s = std.fmt.allocPrint(self.allocator, "{d}", .{v}) catch {
-                        self.allocator.free(paramValues);
-                        self.allocator.free(paramLengths);
-                        return null;
-                    };
+                    const s = std.fmt.allocPrint(self.allocator, "{d}", .{v}) catch return null;
+                    paramAllocs[i] = s;
                     paramLengths[i] = @intCast(s.len);
                     break :blk @ptrCast(s.ptr);
                 },
                 .float => |v| blk: {
-                    const s = std.fmt.allocPrint(self.allocator, "{d}", .{v}) catch {
-                        self.allocator.free(paramValues);
-                        self.allocator.free(paramLengths);
-                        return null;
-                    };
+                    const s = std.fmt.allocPrint(self.allocator, "{d}", .{v}) catch return null;
+                    paramAllocs[i] = s;
                     paramLengths[i] = @intCast(s.len);
                     break :blk @ptrCast(s.ptr);
                 },
                 .string => |v| blk: {
-                    // Strings may not be null-terminated, so we provide paramLengths.
                     paramLengths[i] = @intCast(v.len);
                     break :blk @ptrCast(v.ptr);
                 },
@@ -626,39 +636,40 @@ pub const PostgresConn = struct {
                 },
             };
         }
-        // Convert ? placeholders to $1,$2,... for PostgreSQL
-        const pg_sql = convertPlaceholders(self.allocator, sql_str) orelse {
-            self.allocator.free(paramValues);
-            self.allocator.free(paramLengths);
-            return null;
-        };
+
+        const pg_sql = convertPlaceholders(self.allocator, sql_str) orelse return null;
         defer self.allocator.free(pg_sql);
-        const res = libpq_c.PQexecParams(self.conn, @ptrCast(pg_sql.ptr), @intCast(args.len), null, @ptrCast(paramValues.ptr), @ptrCast(paramLengths.ptr), null, 0);
-        self.allocator.free(paramValues);
-        self.allocator.free(paramLengths);
-        return res;
+        return libpq_c.PQexecParams(self.conn, @ptrCast(pg_sql.ptr), @intCast(param_count), null, @ptrCast(paramValues.ptr), @ptrCast(paramLengths.ptr), null, 0);
     }
 
-    fn convertPlaceholders(allocator: std.mem.Allocator, sql: []const u8) ?[]u8 {
+    fn convertPlaceholders(allocator: std.mem.Allocator, sql: []const u8) ?[:0]u8 {
         var count: usize = 0;
         for (sql) |c| {
             if (c == '?') count += 1;
         }
-        if (count == 0) return allocator.dupe(u8, sql) catch null;
-        var buf = std.ArrayList(u8).empty;
+        if (count == 0) return allocator.dupeZ(u8, sql) catch null;
+        // Estimate size: original len - count + count*4 + 1 (null terminator)
+        const est = sql.len - count + count * 4 + 1;
+        const buf = allocator.alloc(u8, est) catch return null;
+        var pos: usize = 0;
         var n: usize = 0;
         for (sql) |c| {
             if (c == '?') {
                 n += 1;
-                // Max $999 = 4 chars
                 var tmp: [5]u8 = undefined;
-                const s = std.fmt.bufPrint(&tmp, "${d}", .{n}) catch return null;
-                buf.appendSlice(allocator, s) catch return null;
+                const s = std.fmt.bufPrint(&tmp, "${d}", .{n}) catch {
+                    allocator.free(buf);
+                    return null;
+                };
+                @memcpy(buf[pos..pos + s.len], s);
+                pos += s.len;
             } else {
-                buf.append(allocator, c) catch return null;
+                buf[pos] = c;
+                pos += 1;
             }
         }
-        return buf.toOwnedSlice(allocator) catch null;
+        buf[pos] = 0;
+        return buf[0..pos :0];
     }
 
     fn closeFn(ptr: *anyopaque) void {
