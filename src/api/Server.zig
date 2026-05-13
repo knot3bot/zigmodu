@@ -476,9 +476,11 @@ pub const Context = struct {
     /// returned value owns its memory (avoids use-after-free from arena).
     pub fn bindJson(self: *const Context, comptime T: type) !T {
         if (self.body == null) return error.NoBody;
-        var parsed = std.json.parseFromSlice(T, self.allocator, self.body.?, .{}) catch return error.InvalidJson;
+        var parsed = std.json.parseFromSlice(T, self.allocator, self.body.?, .{}) catch |err| {
+            std.log.err("bindJson({s}) failed: {s} body_len={d}", .{ @typeName(T), @errorName(err), self.body.?.len });
+            return error.InvalidJson;
+        };
         defer parsed.deinit();
-        // Deep-copy value to escape the parse arena lifetime
         return deepCopy(parsed.value, self.allocator);
     }
 
