@@ -603,18 +603,10 @@ const StreamReader = struct {
     }
 
     fn readAll(self: *StreamReader, out: []u8) !usize {
-        // Use Reader.read (not Interface.readSliceAll) — the Reader's internal
-        // buffer may already contain body residue from takeDelimiter's lookahead.
-        // Interface methods bypass the buffer; Reader methods drain it first.
-        var total: usize = 0;
-        while (total < out.len) {
-            const n = self.reader.read(out[total..]) catch |err| switch (err) {
-                error.EndOfStream, error.ReadFailed => return total,
-            };
-            if (n == 0) return total;
-            total += n;
-        }
-        return total;
+        self.reader.interface.readSliceAll(out) catch |err| switch (err) {
+            error.EndOfStream, error.ReadFailed => return 0,
+        };
+        return out.len;
     }
 };
 

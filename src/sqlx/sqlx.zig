@@ -314,7 +314,7 @@ pub const SQLiteConn = struct {
     fn getCachedStmt(self: *SQLiteConn, sql_str: []const u8) !*sqlite3_c.sqlite3_stmt {
         if (self.stmt_cache.get(sql_str)) |cached| {
             _ = sqlite3_c.sqlite3_reset(cached);
-            _ = sqlite3_c.sqlite3_clear_bindings(cached);
+            // sqlite3_clear_bindings not in bindings
             return cached;
         }
         // Evict oldest if at capacity
