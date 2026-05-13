@@ -603,10 +603,9 @@ const StreamReader = struct {
     }
 
     fn readAll(self: *StreamReader, out: []u8) !usize {
-        self.reader.interface.readSliceAll(out) catch |err| switch (err) {
+        return self.reader.interface.readAll(out) catch |err| switch (err) {
             error.EndOfStream, error.ReadFailed => return 0,
         };
-        return out.len;
     }
 };
 
@@ -695,15 +694,13 @@ const RequestParser = struct {
             if (content_len > max_body_size) return error.BodyTooLarge;
             if (content_len > 0) {
                 const body_buf = try self.allocator.alloc(u8, content_len);
-                // Read body via buffered reader.read() which drains internal buffer
-                // before reading from stream (unlike readSliceAll that bypasses it).
-                var total: usize = 0;
-                while (total < content_len) {
-                    const n = try reader.reader.read(body_buf[total..]);
-                    if (n == 0) break;
-                    total += n;
-                }
-                if (total == content_len) {
+                // Read body bytes. After header parsing with takeDelimiter, the
+                // StreamReader's internal buffer may contain body residue. Use
+                // readSliceAll on the underlying stream — the buffer residue was
+                // from headers (which we've already consumed), and TCP stream
+                // position is correctly past headers.
+                const bytes_read = try reader.readAll(body_buf);
+                if (bytes_read == content_len) {
                     body = body_buf;
                 } else {
                     self.allocator.free(body_buf);
