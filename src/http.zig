@@ -4,6 +4,8 @@
 //! Top-level aliases for common types:
 //!   http.Server, http.Context, http.RouteGroup, http.Middleware
 
+const std = @import("std");
+
 pub const http_server = @import("api/Server.zig");
 pub const Server = @import("api/Server.zig").Server;
 pub const Context = @import("api/Server.zig").Context;
@@ -51,6 +53,24 @@ pub const sendProblemWithType = @import("http/ProblemDetails.zig").sendProblemWi
 pub const sendValidationProblem = @import("http/ProblemDetails.zig").sendValidationProblem;
 pub const wrapContextWithIdempotency = @import("http/Idempotency.zig").wrapContextWithIdempotency;
 pub const recordIdempotencyResponse = @import("http/Idempotency.zig").recordIdempotencyResponse;
+
+/// Request utility helpers.
+pub const RequestUtil = struct {
+    /// Get client real IP (X-Real-IP > X-Forwarded-For > remote).
+    pub fn getRealIp(ctx: *http_server.Context) []const u8 {
+        if (ctx.getAttr("X-Real-IP")) |ip| return ip;
+        if (ctx.getAttr("X-Forwarded-For")) |fwd| {
+            if (std.mem.indexOf(u8, fwd, ",")) |pos| return std.mem.trim(u8, fwd[0..pos], &std.ascii.whitespace);
+            return fwd;
+        }
+        return "unknown";
+    }
+    /// Check if AJAX/XMLHttpRequest.
+    pub fn isAjax(ctx: *http_server.Context) bool {
+        if (ctx.getAttr("X-Requested-With")) |v| return std.mem.eql(u8, v, "XMLHttpRequest");
+        return false;
+    }
+};
 
 /// Unified response renderer (zfinal-style).
 pub const RenderExt = struct {

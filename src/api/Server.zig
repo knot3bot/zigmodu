@@ -153,6 +153,7 @@ pub const Context = struct {
     response_headers: std.StringHashMap([]const u8),
     responded: bool = false,
     user_data: ?*anyopaque = null,
+    attributes: std.StringHashMap([]const u8),
     validation_error_message: ?[]const u8 = null,
     stream: ?std.Io.net.Stream = null,
     io: ?std.Io = null,
@@ -175,6 +176,7 @@ pub const Context = struct {
             .headers = std.StringHashMap([]const u8).init(allocator),
             .response_body = std.ArrayList(u8).empty,
             .response_headers = std.StringHashMap([]const u8).init(allocator),
+            .attributes = std.StringHashMap([]const u8).init(allocator),
         };
     }
 
@@ -221,6 +223,26 @@ pub const Context = struct {
         if (self.validation_error_message) |msg| {
             self.allocator.free(msg);
         }
+
+        var attr_it = self.attributes.iterator();
+        while (attr_it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.attributes.deinit();
+    }
+
+    /// Store an attribute on the context (for middleware data passing).
+    pub fn setAttr(self: *Context, key: []const u8, value: []const u8) !void {
+        const k = try self.allocator.dupe(u8, key);
+        errdefer self.allocator.free(k);
+        const v = try self.allocator.dupe(u8, value);
+        try self.attributes.put(k, v);
+    }
+
+    /// Retrieve an attribute from the context.
+    pub fn getAttr(self: *const Context, key: []const u8) ?[]const u8 {
+        return self.attributes.get(key);
     }
 
     /// Get query parameter
