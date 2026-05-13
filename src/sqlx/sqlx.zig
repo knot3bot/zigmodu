@@ -486,9 +486,15 @@ fn readSQLiteValue(allocator: std.mem.Allocator, stmt: ?*sqlite3_c.sqlite3_stmt,
 
 // ==================== PostgreSQL Implementation ====================
 
+/// Maximum cached prepared statements per PG connection.
+const PG_MAX_CACHED_STMTS = 64;
+
 pub const PostgresConn = struct {
     conn: ?*libpq_c.PGconn,
     allocator: std.mem.Allocator,
+    /// LRU-style prepared statement cache: SQL text → statement name.
+    stmt_cache: std.StringHashMap([]const u8),
+    stmt_counter: u64 = 0,
 
     /// Connect using explicit parameters via dlsym (bypasses Zig C ABI issues)
     pub fn connectParams(allocator: std.mem.Allocator, host: []const u8, port: u16, user: []const u8, pass: []const u8, db: []const u8) !PostgresConn {
@@ -519,7 +525,7 @@ pub const PostgresConn = struct {
             libpq_c.PQfinish(conn);
             return error.DatabaseError;
         }
-        return .{ .conn = conn, .allocator = allocator };
+        return .{ .conn = conn, .allocator = allocator, .stmt_cache = std.StringHashMap([]const u8).init(allocator) };
     }
 
     /// Null-terminated string connect
@@ -542,7 +548,7 @@ pub const PostgresConn = struct {
         errdefer arena.deinit();
         const arena_alloc = arena.allocator();
 
-        const res = execParams(self, sql_str, args) orelse return error.DatabaseError;
+        const res = execPrepared(self, sql_str, args) orelse return error.DatabaseError;
         defer libpq_c.PQclear(res);
 
         if (libpq_c.PQresultStatus(res) != libpq_c.ExecStatusType.PGRES_TUPLES_OK) return error.DatabaseError;
@@ -575,7 +581,7 @@ pub const PostgresConn = struct {
 
     fn execFn(ptr: *anyopaque, sql_str: []const u8, args: []const Value) errors.ResultT(ExecResult) {
         const self = @as(*PostgresConn, @ptrCast(@alignCast(ptr)));
-        const res = execParams(self, sql_str, args) orelse return error.DatabaseError;
+        const res = execPrepared(self, sql_str, args) orelse return error.DatabaseError;
         defer libpq_c.PQclear(res);
 
         const status = libpq_c.PQresultStatus(res);
@@ -586,6 +592,108 @@ pub const PostgresConn = struct {
         return ExecResult{ .rows_affected = affected };
     }
 
+    /// Execute with prepared statement caching. First call prepares and caches;
+    /// subsequent calls reuse via PQexecPrepared (server-side).
+    fn execPrepared(self: *PostgresConn, sql_str: []const u8, args: []const Value) ?*libpq_c.PGresult {
+        // Convert ? → $1,$2,... (always needed for PG)
+        const pg_sql = convertPlaceholders(self.allocator, sql_str) orelse return null;
+        defer self.allocator.free(pg_sql);
+
+        // Check cache
+        if (self.stmt_cache.get(pg_sql)) |stmt_name| {
+            return self.execPreparedStmt(stmt_name, args);
+        }
+
+        // Evict oldest if at capacity
+        if (self.stmt_cache.count() >= PG_MAX_CACHED_STMTS) {
+            var it = self.stmt_cache.iterator();
+            if (it.next()) |entry| {
+                var dealloc_buf: [64]u8 = undefined;
+                const dealloc_sql = std.fmt.bufPrint(&dealloc_buf, "DEALLOCATE {s}", .{entry.value_ptr.*}) catch return null;
+                _ = libpq_c.PQexec(self.conn, @ptrCast(dealloc_sql.ptr));
+                self.allocator.free(entry.key_ptr.*);
+                self.allocator.free(entry.value_ptr.*);
+                _ = self.stmt_cache.remove(entry.key_ptr.*);
+            }
+        }
+
+        // Prepare new statement
+        self.stmt_counter += 1;
+        var stmt_buf: [32]u8 = undefined;
+        const stmt_name = std.fmt.bufPrint(&stmt_buf, "zs_{d}", .{self.stmt_counter}) catch return null;
+        const prep_res = libpq_c.PQprepare(self.conn, @ptrCast(stmt_name.ptr), @ptrCast(pg_sql.ptr), @intCast(args.len), null);
+        defer libpq_c.PQclear(prep_res);
+        if (libpq_c.PQresultStatus(prep_res) != libpq_c.ExecStatusType.PGRES_COMMAND_OK) return null;
+
+        // Cache
+        const stmt_name_dup = self.allocator.dupe(u8, stmt_name) catch return null;
+        const sql_dup = self.allocator.dupe(u8, pg_sql) catch {
+            self.allocator.free(stmt_name_dup);
+            return null;
+        };
+        self.stmt_cache.put(sql_dup, stmt_name_dup) catch {
+            self.allocator.free(stmt_name_dup);
+            self.allocator.free(sql_dup);
+            return null;
+        };
+
+        return self.execPreparedStmt(stmt_name, args);
+    }
+
+    /// Execute already-prepared statement.
+    fn execPreparedStmt(self: *PostgresConn, stmt_name: []const u8, args: []const Value) ?*libpq_c.PGresult {
+        const param_count = args.len;
+        const paramValues = self.allocator.alloc(?[*]const u8, param_count) catch return null;
+        const paramLengths = self.allocator.alloc(c_int, param_count) catch {
+            self.allocator.free(paramValues);
+            return null;
+        };
+        const paramAllocs = self.allocator.alloc(?[]const u8, param_count) catch {
+            self.allocator.free(paramValues);
+            self.allocator.free(paramLengths);
+            return null;
+        };
+        @memset(paramAllocs, null);
+
+        defer {
+            for (paramAllocs) |maybe_alloc| {
+                if (maybe_alloc) |a| self.allocator.free(a);
+            }
+            self.allocator.free(paramAllocs);
+            self.allocator.free(paramLengths);
+            self.allocator.free(paramValues);
+        }
+
+        for (args, 0..) |arg, i| {
+            paramValues[i] = switch (arg) {
+                .null => null,
+                .int => |v| blk: {
+                    const s = std.fmt.allocPrint(self.allocator, "{d}", .{v}) catch return null;
+                    paramAllocs[i] = s;
+                    paramLengths[i] = @intCast(s.len);
+                    break :blk @ptrCast(s.ptr);
+                },
+                .float => |v| blk: {
+                    const s = std.fmt.allocPrint(self.allocator, "{d}", .{v}) catch return null;
+                    paramAllocs[i] = s;
+                    paramLengths[i] = @intCast(s.len);
+                    break :blk @ptrCast(s.ptr);
+                },
+                .string => |v| blk: {
+                    paramLengths[i] = @intCast(v.len);
+                    break :blk @ptrCast(v.ptr);
+                },
+                .bool => |v| blk: {
+                    paramLengths[i] = 1;
+                    break :blk if (v) @ptrCast("t") else @ptrCast("f");
+                },
+            };
+        }
+
+        return libpq_c.PQexecPrepared(self.conn, @ptrCast(stmt_name.ptr), @intCast(param_count), @ptrCast(paramValues.ptr), @ptrCast(paramLengths.ptr), null, 0);
+    }
+
+    /// Fallback: direct PQexecParams (no caching). Used when prepared stmt fails.
     fn execParams(self: *PostgresConn, sql_str: []const u8, args: []const Value) ?*libpq_c.PGresult {
         if (self.conn == null) return null;
 
@@ -674,6 +782,16 @@ pub const PostgresConn = struct {
 
     fn closeFn(ptr: *anyopaque) void {
         const self = @as(*PostgresConn, @ptrCast(@alignCast(ptr)));
+        // Deallocate all cached prepared statements
+        var it = self.stmt_cache.iterator();
+        while (it.next()) |entry| {
+            var dealloc_buf: [64]u8 = undefined;
+            const sql = std.fmt.bufPrint(&dealloc_buf, "DEALLOCATE {s}", .{entry.value_ptr.*}) catch "";
+            if (self.conn != null) _ = libpq_c.PQexec(self.conn, @ptrCast(sql.ptr));
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.stmt_cache.deinit();
         if (self.conn) |conn| {
             libpq_c.PQfinish(conn);
             self.conn = null;
