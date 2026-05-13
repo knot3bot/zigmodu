@@ -142,6 +142,7 @@ pub const ScheduledTask = @import("scheduler/ScheduledTask.zig").ScheduledTask;
 pub const time = @import("core/Time.zig");
 pub const fx = @import("core/Fx.zig");
 pub const util = @import("util.zig");
+pub const pluralize = util.pluralize;
 pub const Validator = @import("validation/ObjectValidator.zig").Validator;
 
 // ============================================================

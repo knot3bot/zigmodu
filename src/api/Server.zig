@@ -228,20 +228,31 @@ pub const Context = struct {
         return self.query.get(key);
     }
 
-    /// Get query parameter as i64 with default.
-    pub fn queryInt(self: *const Context, key: []const u8, default: i64) i64 {
-        return if (self.query.get(key)) |v| std.fmt.parseInt(i64, v, 10) catch default else default;
-    }
-
     /// Get path parameter
     pub fn param(self: *const Context, key: []const u8) ?[]const u8 {
         return self.params.get(key);
     }
 
-    /// Get path parameter as i64.
-    pub fn paramInt(self: *const Context, key: []const u8) !i64 {
-        const v = self.params.get(key) orelse return error.MissingParam;
-        return try std.fmt.parseInt(i64, v, 10);
+    /// Path parameter as integer (generic). Returns error.BadRequest if missing/invalid.
+    pub fn paramInt(self: *const Context, comptime T: type, key: []const u8) !T {
+        const v = self.params.get(key) orelse return error.BadRequest;
+        return std.fmt.parseInt(T, v, 10) catch error.BadRequest;
+    }
+
+    /// Path parameter as string (required).
+    pub fn paramStr(self: *const Context, key: []const u8) ![]const u8 {
+        return self.params.get(key) orelse error.BadRequest;
+    }
+
+    /// Query parameter as integer with default.
+    pub fn queryInt(self: *const Context, comptime T: type, key: []const u8, default: T) T {
+        const val = self.query.get(key) orelse return default;
+        return std.fmt.parseInt(T, val, 10) catch default;
+    }
+
+    /// Query parameter as string with default.
+    pub fn queryStr(self: *const Context, key: []const u8, default: []const u8) []const u8 {
+        return self.query.get(key) orelse default;
     }
 
     /// Get header
@@ -449,13 +460,12 @@ pub const Context = struct {
         return deepCopy(parsed.value, self.allocator);
     }
 
-    /// Send JSON from struct
+    /// Send JSON from struct — streaming write, zero alloc.
     pub fn jsonStruct(self: *Context, status: u16, value: anytype) !void {
         self.status_code = status;
         try self.setHeader("Content-Type", "application/json");
-        const json_str = try std.fmt.allocPrint(self.allocator, "{f}", .{std.json.fmt(value, .{})});
-        defer self.allocator.free(json_str);
-        try self.response_body.appendSlice(self.allocator, json_str);
+        const w = self.response_body.writer(self.allocator);
+        try std.json.stringify(value, .{}, w);
         self.responded = true;
     }
 
@@ -1420,7 +1430,7 @@ fn deepCopy(value: anytype, allocator: std.mem.Allocator) @TypeOf(value) {
             return copy;
         },
         .pointer => |p| {
-            if (p.size == .Slice and p.child == u8) {
+            if (p.child == u8) {
                 return allocator.dupe(u8, value) catch @panic("OOM");
             }
             return value;
@@ -1969,8 +1979,8 @@ test "queryInt returns default on missing param" {
     var ctx = try Context.init(allocator, .GET, "/test");
     defer ctx.deinit();
 
-    try std.testing.expectEqual(@as(i64, 0), ctx.queryInt("page", 0));
-    try std.testing.expectEqual(@as(i64, 10), ctx.queryInt("size", 10));
+    try std.testing.expectEqual(@as(i64, 0), ctx.queryInt(i64, "page", 0));
+    try std.testing.expectEqual(@as(i64, 10), ctx.queryInt(i64, "size", 10));
 }
 
 test "queryInt parses valid integer" {
@@ -1985,7 +1995,7 @@ test "queryInt parses valid integer" {
     const sv = try allocator.dupe(u8, "20");
     try ctx.query.put(sk, sv);
 
-    try std.testing.expectEqual(@as(i64, 5), ctx.queryInt("page", 0));
-    try std.testing.expectEqual(@as(i64, 20), ctx.queryInt("size", 10));
-    try std.testing.expectEqual(@as(i64, 42), ctx.queryInt("missing", 42));
+    try std.testing.expectEqual(@as(i64, 5), ctx.queryInt(i64, "page", 0));
+    try std.testing.expectEqual(@as(i64, 20), ctx.queryInt(i64, "size", 10));
+    try std.testing.expectEqual(@as(i64, 42), ctx.queryInt(i64, "missing", 42));
 }
