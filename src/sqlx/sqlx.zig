@@ -44,16 +44,22 @@ pub const Value = union(enum) {
 
 /// Row of query results
 pub const Row = struct {
-    allocator: std.mem.Allocator,
+    /// Pointer to the Rows arena. Stable across arena relocation (move from
+    /// stack to Rows struct). Use .allocator() to get a working Allocator.
+    arena: *std.heap.ArenaAllocator,
     columns: []const []const u8,
     values: []const ?Value,
+
+    pub fn rowAllocator(self: Row) std.mem.Allocator {
+        return self.arena.allocator();
+    }
 
     pub fn get(self: Row, column: []const u8) ?Value {
         for (self.columns, 0..) |col, i| {
             if (std.mem.eql(u8, col, column)) {
                 const v = self.values[i] orelse return null;
                 switch (v) {
-                    .string => |s| return .{ .string = self.allocator.dupe(u8, s) catch return null },
+                    .string => |s| return .{ .string = self.rowAllocator().dupe(u8, s) catch return null },
                     else => return v,
                 }
             }
@@ -227,7 +233,7 @@ fn scanStruct(allocator: std.mem.Allocator, comptime T: type, row: Row, partial:
         const val: ?Value = if (ci) |c| blk: {
             if (row.values[c]) |v| {
                 switch (v) {
-                    .string => |s| break :blk .{ .string = row.allocator.dupe(u8, s) catch return error.DatabaseError },
+                    .string => |s| break :blk .{ .string = row.rowAllocator().dupe(u8, s) catch return error.DatabaseError },
                     else => break :blk v,
                 }
             }
@@ -365,12 +371,14 @@ pub const SQLiteConn = struct {
                 columns[i] = arena_alloc.dupe(u8, name) catch return error.DatabaseError;
                 values[i] = readSQLiteValue(arena_alloc, stmt, @intCast(i));
             }
-            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .arena = undefined, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
 
         const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        return Rows{ .arena = arena, .rows = rows_slice };
+        var rows = Rows{ .arena = arena, .rows = rows_slice };
+        for (rows.rows) |*row| row.arena = &rows.arena;
+        return rows;
     }
 
     fn execFn(ptr: *anyopaque, sql_str: []const u8, args: []const Value) errors.ResultT(ExecResult) {
@@ -582,19 +590,13 @@ pub const PostgresConn = struct {
             }
             // Temporarily store arena_alloc; will be updated after Rows is created
             // so that .allocator points to the moved arena, not the stack copy.
-            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .arena = undefined, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
 
         const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
         var rows = Rows{ .arena = arena, .rows = rows_slice };
-        // Fixup: arena was on stack; after moving into Rows, update all Row.allocator
-        // to point to the moved arena. Without this, Row.allocator's internal pointer
-        // dangles to the old stack location, causing segfault on dupe.
-        const moved_alloc = rows.arena.allocator();
-        for (rows.rows) |*row| {
-            row.allocator = moved_alloc;
-        }
+        for (rows.rows) |*row| row.arena = &rows.arena;
         return rows;
     }
 
@@ -1004,18 +1006,22 @@ fn mysqlReadRowsAfterQuery(mysql: ?*libmysql_c.MYSQL, arena: std.heap.ArenaAlloc
                     values[c] = .{ .string = arena_alloc.dupe(u8, val) catch return error.DatabaseError };
                 }
             }
-            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .arena = undefined, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
 
         const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        return Rows{ .arena = arena_mut, .rows = rows_slice };
+        var rows = Rows{ .arena = arena_mut, .rows = rows_slice };
+        for (rows.rows) |*row| row.arena = &rows.arena;
+        return rows;
     }
 
     if (libmysql_c.mysql_errno(mysql) != 0) return error.DatabaseError;
     if (libmysql_c.mysql_field_count(mysql) == 0) return error.DatabaseError;
     const rows_slice = arena_alloc.alloc(Row, 0) catch return error.DatabaseError;
-    return Rows{ .arena = arena_mut, .rows = rows_slice };
+    var rows = Rows{ .arena = arena_mut, .rows = rows_slice };
+    for (rows.rows) |*row| row.arena = &rows.arena;
+    return rows;
 }
 
 pub const MySqlConn = struct {
@@ -1194,12 +1200,14 @@ pub const SQLiteStmt = struct {
                 columns[i] = arena_alloc.dupe(u8, name) catch return error.DatabaseError;
                 values[i] = readSQLiteValue(arena_alloc, self.stmt, @intCast(i));
             }
-            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .arena = undefined, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
 
         const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        return Rows{ .arena = arena, .rows = rows_slice };
+        var rows = Rows{ .arena = arena, .rows = rows_slice };
+        for (rows.rows) |*row| row.arena = &rows.arena;
+        return rows;
     }
 
     fn execFn(ptr: *anyopaque, args: []const Value) errors.ResultT(ExecResult) {
@@ -1307,11 +1315,13 @@ pub const PostgresStmt = struct {
                     values[c] = .{ .string = arena_alloc.dupe(u8, val) catch return error.DatabaseError };
                 }
             }
-            rows_list.append(arena_alloc, .{ .allocator = arena_alloc, .columns = columns, .values = values }) catch return error.DatabaseError;
+            rows_list.append(arena_alloc, .{ .arena = undefined, .columns = columns, .values = values }) catch return error.DatabaseError;
         }
         const rows_slice = arena_alloc.alloc(Row, rows_list.items.len) catch return error.DatabaseError;
         @memcpy(rows_slice, rows_list.items);
-        return Rows{ .arena = arena, .rows = rows_slice };
+        var rows = Rows{ .arena = arena, .rows = rows_slice };
+        for (rows.rows) |*row| row.arena = &rows.arena;
+        return rows;
     }
 
     fn execFn(ptr: *anyopaque, args: []const Value) errors.ResultT(ExecResult) {
